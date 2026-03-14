@@ -1,9 +1,9 @@
 import * as vscode from "vscode";
-import { resolveWorkspacePath } from "../security";
+import { ensureMutationAllowed, resolveWorkspacePath } from "../security";
 import { log } from "../logger";
 import { getConfig } from "../config";
 
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+function withTimeout<T>(promise: PromiseLike<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
     promise.then(
@@ -201,7 +201,7 @@ function flattenDocSymbols(
 
 export async function langSymbols(
   params: SymbolsParams
-): Promise<{ symbols: SymbolEntry[] }> {
+): Promise<{ symbols: SymbolEntry[]; total?: number }> {
   // Document symbols (specific file)
   if (params.path) {
     const uri = resolveWorkspacePath(params.path);
@@ -255,6 +255,7 @@ interface RenameParams {
 export async function langRename(
   params: RenameParams
 ): Promise<{ ok: boolean; filesChanged: number; editsApplied: number }> {
+  await ensureMutationAllowed("rename symbols", `${params.path}:${params.line}`);
   const { uri, position } = await positionFromParams(params);
 
   const edit = await vscode.commands.executeCommand<vscode.WorkspaceEdit>(
@@ -349,6 +350,7 @@ interface ApplyCodeActionParams {
 export async function langApplyCodeAction(
   params: ApplyCodeActionParams
 ): Promise<{ ok: boolean; title: string }> {
+  await ensureMutationAllowed("apply a code action", `${params.path}:${params.line}`);
   const uri = resolveWorkspacePath(params.path);
   const doc = await vscode.workspace.openTextDocument(uri);
 
@@ -405,6 +407,7 @@ interface FormatParams {
 export async function codeFormat(
   params: FormatParams
 ): Promise<{ ok: boolean; editsApplied: number }> {
+  await ensureMutationAllowed("format a file", params.path);
   const uri = resolveWorkspacePath(params.path);
   const doc = await vscode.workspace.openTextDocument(uri);
 

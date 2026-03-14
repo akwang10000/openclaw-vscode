@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { log } from "./logger";
-import { agentStatus, getEnhancedEnv } from "./commands/agent";
+import { agentStatus, openAgentCliTerminal, runAgentCliCommand } from "./commands/agent";
+import { getValidatedCliPath } from "./security";
 
 let panel: vscode.WebviewPanel | null = null;
 
@@ -38,11 +39,10 @@ export async function showSetupWizard(context: vscode.ExtensionContext): Promise
   });
 
   panel.webview.onDidReceiveMessage(async (msg) => {
-    const cliPath = vscode.workspace.getConfiguration("openclaw").get<string>("agent.cliPath", "agent");
-
     if (msg.type === "save") {
       const d = msg.data;
       const c = vscode.workspace.getConfiguration("openclaw");
+      getValidatedCliPath(d.agentCliPath || "agent");
       await c.update("gatewayHost", d.gatewayHost, vscode.ConfigurationTarget.Global);
       await c.update("gatewayPort", Number(d.gatewayPort), vscode.ConfigurationTarget.Global);
       await c.update("gatewayToken", d.gatewayToken, vscode.ConfigurationTarget.Global);
@@ -78,30 +78,30 @@ export async function showSetupWizard(context: vscode.ExtensionContext): Promise
     }
 
     if (msg.type === "agentLogin") {
-      const term = vscode.window.createTerminal("Cursor Agent Login");
-      term.show();
-      term.sendText(`${cliPath} login`);
+      try {
+        await openAgentCliTerminal("Cursor Agent Login", ["login"]);
+      } catch (e: any) {
+        panel?.webview.postMessage({ type: "authStatus", ok: false, detail: e.message });
+      }
     }
 
     if (msg.type === "checkAuth") {
-      const cp = await import("child_process");
       try {
-        // Use --list-models --trust as auth check (auth status gets blocked by workspace trust)
-        const out = cp.execSync(`${cliPath} --list-models --trust 2>&1`, { encoding: "utf-8", timeout: 20000, env: getEnhancedEnv() });
-        const clean = out.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").trim();
+        const result = await runAgentCliCommand(["--list-models", "--trust"], { timeoutMs: 20_000 });
+        const clean = result.combinedOutput.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").trim();
         const ok = clean.includes("Available models") && !clean.includes("No models") && !clean.includes("Authentication required");
         panel?.webview.postMessage({ type: "authStatus", ok, detail: ok ? "Authenticated" : clean });
       } catch (e: any) {
-        const msg = (e.stdout || e.message || "").replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").trim();
+        const msg = (e.message || "").replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").trim();
         const isTrust = msg.includes("Workspace Trust");
         panel?.webview.postMessage({ type: "authStatus", ok: false, detail: isTrust ? "Run `agent` interactively first to trust the workspace" : (msg.slice(0, 200) || "Not authenticated") });
       }
     }
 
     if (msg.type === "listModels") {
-      const cp = await import("child_process");
       try {
-        const out = cp.execSync(`${cliPath} --list-models --trust 2>&1`, { encoding: "utf-8", timeout: 20000, env: getEnhancedEnv() });
+        const result = await runAgentCliCommand(["--list-models", "--trust"], { timeoutMs: 20_000 });
+        const out = result.combinedOutput;
         // Parse "id - Display Name" lines, e.g. "opus-4.6-thinking - Claude 4.6 Opus (Thinking)"
         const models = out.split("\n")
           .map(l => l.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").trim())
@@ -210,10 +210,10 @@ code{background:var(--card);padding:2px 6px;border-radius:3px;font-size:11px}
       <button class="preset" onclick="applyPreset('trusted')">🤝 Trusted (full access)</button>
     </div>
     <div class="row"><input type="checkbox" id="readOnly" ${d.readOnly ? "checked" : ""}><label for="readOnly">Read-only mode</label></div>
-    <div class="row"><input type="checkbox" id="confirmWrites" ${d.confirmWrites ? "checked" : ""}><label for="confirmWrites">Confirm before writes/deletes</label></div>
+    <div class="row"><input type="checkbox" id="confirmWrites" ${d.confirmWrites ? "checked" : ""}><label for="confirmWrites">Confirm before mutating commands</label></div>
     <div style="margin-top:16px"><div class="sd" style="font-weight:500;color:var(--fg)">🖥️ Terminal Access</div></div>
     <div class="row"><input type="checkbox" id="terminalEnabled" ${d.terminalEnabled ? "checked" : ""}><label for="terminalEnabled">Enable terminal commands</label></div>
-    <div class="field"><label>Allowlist</label><input type="text" id="terminalAllowlist" value="${esc(d.terminalAllowlist)}" placeholder="git, npm, pnpm"><div class="hint">Comma-separated. <code>*</code> = allow all (⚠️)</div></div>
+    <div class="field"><label>Allowlist</label><input type="text" id="terminalAllowlist" value="${esc(d.terminalAllowlist)}" placeholder="git, npm, pnpm"><div class="hint">Comma-separated executable names only. <code>*</code> = allow all (⚠️)</div></div>
   </div>
 
   <!-- Step 2: Agent CLI -->

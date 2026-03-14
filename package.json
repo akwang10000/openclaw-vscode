@@ -1,7 +1,7 @@
 {
   "name": "openclaw-node-vscode",
   "displayName": "OpenClaw Node for VS Code",
-  "description": "Secure workspace bridge between OpenClaw Gateway and VS Code — file operations, search, and diagnostics via VS Code API sandbox.",
+  "description": "Secure workspace bridge between OpenClaw Gateway and VS Code for file operations, search, and diagnostics via the VS Code API sandbox.",
   "version": "0.2.0",
   "publisher": "xiaoyaner-home",
   "license": "MIT",
@@ -75,12 +75,12 @@
         "openclaw.readOnly": {
           "type": "boolean",
           "default": false,
-          "description": "Read-only mode — disallow file writes and deletes"
+          "description": "Read-only mode: block all mutating commands exposed by the extension"
         },
         "openclaw.confirmWrites": {
           "type": "boolean",
           "default": false,
-          "description": "Show confirmation dialog before file writes/deletes"
+          "description": "Show a confirmation dialog before mutating commands"
         },
         "openclaw.terminal.enabled": {
           "type": "boolean",
@@ -91,7 +91,7 @@
           "type": "array",
           "items": { "type": "string" },
           "default": ["git", "npm", "pnpm", "npx", "node", "tsc"],
-          "description": "Allowed terminal commands (only effective when terminal is enabled)"
+          "description": "Allowed terminal executables by basename, for example git or npm"
         },
         "openclaw.commandTimeout": {
           "type": "number",
@@ -131,7 +131,8 @@
     "build": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --sourcemap",
     "watch": "npm run build -- --watch",
     "package": "vsce package",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "node test/security-core.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -1,5 +1,10 @@
-import * as vscode from "vscode";
-import { isCommandAllowed } from "../security";
+import {
+  createSpawnCommand,
+  ensureMutationAllowed,
+  isExecutableAllowed,
+  parseCommandString,
+  resolveWorkspaceCwd,
+} from "../security";
 import { getConfig } from "../config";
 import { log, logError, logWarn } from "../logger";
 import { spawn } from "child_process";
@@ -26,40 +31,20 @@ export async function terminalRun(params: TerminalRunParams): Promise<TerminalRu
     throw new Error("Terminal execution is disabled. Enable openclaw.terminal.enabled to use this.");
   }
 
-  if (cfg.readOnly) {
-    throw new Error("Read-only mode is enabled");
-  }
+  const parsed = parseCommandString(params.command);
 
-  if (!isCommandAllowed(params.command, cfg.terminalAllowlist)) {
+  if (!isExecutableAllowed(parsed.executable, cfg.terminalAllowlist)) {
     throw new Error(
       `Command not in allowlist. Allowed: ${cfg.terminalAllowlist.join(", ")}`
     );
   }
 
-  if (cfg.confirmWrites) {
-    const choice = await vscode.window.showWarningMessage(
-      `OpenClaw wants to run: ${params.command}`,
-      "Allow",
-      "Deny"
-    );
-    if (choice !== "Allow") {
-      throw new Error("Command denied by user");
-    }
-  }
+  await ensureMutationAllowed("run a terminal command", params.command);
 
-  // Resolve cwd relative to workspace
-  let cwd: string | undefined;
-  if (params.cwd) {
-    const folders = vscode.workspace.workspaceFolders;
-    if (folders) {
-      const path = require("path");
-      cwd = path.resolve(folders[0].uri.fsPath, params.cwd);
-    }
-  } else {
-    cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  }
+  const cwd = resolveWorkspaceCwd(params.cwd);
 
   const timeoutMs = params.timeoutMs ?? 60_000;
+  const spawnCommand = createSpawnCommand(parsed.executable, parsed.args);
 
   logWarn(`terminal.run: ${params.command}`);
 
@@ -69,8 +54,8 @@ export async function terminalRun(params: TerminalRunParams): Promise<TerminalRu
     let timedOut = false;
     let settled = false;
 
-    const child = spawn(params.command, {
-      shell: true,
+    const child = spawn(spawnCommand.file, spawnCommand.args, {
+      shell: false,
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,

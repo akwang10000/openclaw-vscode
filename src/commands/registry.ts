@@ -37,6 +37,8 @@ import { terminalRun } from "./terminal";
 import { agentRun, agentSetup, agentStatus } from "./agent";
 import { log } from "../logger";
 import { activityStore } from "../activity-store";
+import { getConfig } from "../config";
+import { computeEffectiveTimeout } from "../security";
 
 type CommandHandler = (params: unknown) => Promise<unknown>;
 
@@ -102,7 +104,8 @@ export function getRegisteredCommands(): string[] {
 
 export async function dispatchCommand(
   command: string,
-  params: unknown
+  params: unknown,
+  requestedTimeoutMs?: number
 ): Promise<
   | { ok: true; payload?: unknown }
   | { ok: false; error: { code: string; message: string } }
@@ -116,8 +119,15 @@ export async function dispatchCommand(
   }
 
   const activityId = activityStore.start(command, params);
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const payload = await handler(params);
+    const { timeoutMs } = computeEffectiveTimeout(getConfig().commandTimeout, requestedTimeoutMs);
+    const payload = await Promise.race<unknown>([
+      handler(params),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Command timed out after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
     log(`→ ${command}: ok`);
     activityStore.finish(activityId, true, payload);
     return { ok: true, payload };
@@ -125,9 +135,14 @@ export async function dispatchCommand(
     const message = err instanceof Error ? err.message : String(err);
     log(`→ ${command}: error — ${message}`);
     activityStore.finish(activityId, false, undefined, message);
+    const code = message.includes("timed out after") ? "COMMAND_TIMEOUT" : "COMMAND_ERROR";
     return {
       ok: false,
-      error: { code: "COMMAND_ERROR", message },
+      error: { code, message },
     };
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
   }
 }

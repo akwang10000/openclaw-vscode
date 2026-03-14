@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { log } from "./logger";
+import { getValidatedCliPath } from "./security";
 
 let panel: vscode.WebviewPanel | null = null;
 
@@ -40,6 +41,7 @@ export function showSettingsPanel(context: vscode.ExtensionContext): void {
     if (msg.type === "save") {
       const data = msg.data;
       const cfg = vscode.workspace.getConfiguration("openclaw");
+      getValidatedCliPath(data.agentCliPath || "agent");
       await cfg.update("gatewayHost", data.gatewayHost, vscode.ConfigurationTarget.Global);
       await cfg.update("gatewayPort", Number(data.gatewayPort), vscode.ConfigurationTarget.Global);
       await cfg.update("gatewayToken", data.gatewayToken, vscode.ConfigurationTarget.Global);
@@ -74,39 +76,32 @@ export function showSettingsPanel(context: vscode.ExtensionContext): void {
     }
 
     if (msg.type === "agentLogin") {
-      const term = vscode.window.createTerminal("Cursor Agent Login");
-      term.show();
-      term.sendText("agent login");
+      try {
+        const { openAgentCliTerminal } = await import("./commands/agent");
+        await openAgentCliTerminal("Cursor Agent Login", ["login"]);
+      } catch (e: any) {
+        vscode.window.showErrorMessage(e.message);
+      }
     }
 
     if (msg.type === "loadModels") {
       try {
-        const { getEnhancedEnv } = await import("./commands/agent");
-        const { spawn } = require("child_process");
-        const cliPath = vscode.workspace.getConfiguration("openclaw").get<string>("agent.cliPath") || "agent";
-        const child = spawn(cliPath, ["--list-models", "--trust"], {
-          shell: true,
-          stdio: ["ignore", "pipe", "pipe"],
-          timeout: 10000,
-          env: getEnhancedEnv(),
-        });
-        let out = "";
-        child.stdout?.on("data", (d: Buffer) => (out += d.toString()));
-        child.on("close", (code: number) => {
-          if (code === 0 && out.trim()) {
-            const models = out.trim().split("\n")
-              .map((l: string) => l.trim())
-              .filter((l: string) => l && !l.startsWith("Available") && !l.startsWith("---"));
+        const { runAgentCliCommand } = await import("./commands/agent");
+        const result = await runAgentCliCommand(["--list-models", "--trust"], { timeoutMs: 10_000 });
+        const out = result.combinedOutput.trim();
+        if (result.exitCode === 0 && out) {
+          const models = out.split("\n")
+            .map((l: string) => l.trim())
+            .filter((l: string) => l && !l.startsWith("Available") && !l.startsWith("---"));
             // Parse "id - Display Name" format
-            const parsed = models.map((m: string) => {
-              const dash = m.indexOf(" - ");
-              return dash > 0 ? { id: m.slice(0, dash).trim(), label: m.trim() } : { id: m, label: m };
-            });
-            panel?.webview.postMessage({ type: "modelsLoaded", models: parsed });
-          } else {
-            panel?.webview.postMessage({ type: "modelsError", error: "Failed to load models. Is CLI authenticated?" });
-          }
-        });
+          const parsed = models.map((m: string) => {
+            const dash = m.indexOf(" - ");
+            return dash > 0 ? { id: m.slice(0, dash).trim(), label: m.trim() } : { id: m, label: m };
+          });
+          panel?.webview.postMessage({ type: "modelsLoaded", models: parsed });
+        } else {
+          panel?.webview.postMessage({ type: "modelsError", error: "Failed to load models. Is CLI authenticated?" });
+        }
       } catch (e: any) {
         panel?.webview.postMessage({ type: "modelsError", error: e.message });
       }
@@ -268,11 +263,11 @@ function getHtml(data: SettingsData): string {
   <div class="section-title">🔒 Security</div>
   <div class="checkbox-row">
     <input type="checkbox" id="readOnly" ${data.readOnly ? "checked" : ""}>
-    <label for="readOnly">Read-only mode (no file writes/deletes)</label>
+    <label for="readOnly">Read-only mode (block all mutating commands)</label>
   </div>
   <div class="checkbox-row">
     <input type="checkbox" id="confirmWrites" ${data.confirmWrites ? "checked" : ""}>
-    <label for="confirmWrites">Confirm before writes/deletes</label>
+    <label for="confirmWrites">Confirm before mutating commands</label>
   </div>
 </div>
 
@@ -285,7 +280,7 @@ function getHtml(data: SettingsData): string {
   <div class="field">
     <label>Allowlist</label>
     <input type="text" id="terminalAllowlist" value="${escHtml(data.terminalAllowlist)}" placeholder="git, npm, pnpm">
-    <div class="hint">Comma-separated list of allowed commands</div>
+    <div class="hint">Comma-separated executable names only, for example: git, npm, node</div>
   </div>
 </div>
 

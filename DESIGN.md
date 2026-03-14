@@ -153,7 +153,8 @@ VS Code Extension（MacBook Pro / 任意设备）
 **安全控制：**
 - 设置项 `openclaw.terminal.enabled`（默认 false）
 - 设置项 `openclaw.terminal.allowlist`（默认 `["git", "npm", "pnpm", "npx", "node", "tsc"]`）
-- 不在白名单的命令直接拒绝
+- 白名单按可执行文件名匹配，不接受 shell 拼接、重定向或管道
+- `cwd` 必须在工作区内，越界路径直接拒绝
 
 ## 🔒 安全设计
 
@@ -172,11 +173,11 @@ VS Code Extension（MacBook Pro / 任意设备）
 
 ### 4. 确认模式（可选）
 - 设置项 `openclaw.confirmWrites`（默认 false）
-- 开启后，文件写入/删除前弹确认对话框
+- 开启后，所有会修改工作区或仓库状态的命令都先弹确认对话框
 
 ### 5. 只读模式
 - 设置项 `openclaw.readOnly`（默认 false）
-- 开启后只允许 read/list/search/diagnostics，禁止写入
+- 开启后只允许只读命令，禁止文件写入、语言改写、git 变更、终端执行和 Agent 写模式
 
 ## ⚙️ 配置项
 

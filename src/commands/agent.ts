@@ -1,9 +1,15 @@
+import * as os from "os";
+import * as path from "path";
 import * as vscode from "vscode";
 import { spawn } from "child_process";
-import * as path from "path";
-import * as os from "os";
-import { log, logError, logWarn } from "../logger";
 import { getConfig } from "../config";
+import { log, logError, logWarn } from "../logger";
+import {
+  createSpawnCommand,
+  ensureMutationAllowed,
+  getValidatedCliPath,
+  resolveWorkspaceCwd,
+} from "../security";
 
 /** Get PATH with common CLI install locations added */
 function getEnhancedPath(): string {
@@ -36,34 +42,127 @@ interface AgentRunResult {
   timedOut: boolean;
 }
 
+export interface AgentCliCommandResult {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  combinedOutput: string;
+  timedOut: boolean;
+}
+
 const MAX_OUTPUT = 200_000;
 
-/** Detect if agent CLI is available */
-async function detectAgentCli(): Promise<{ found: boolean; path: string; version?: string }> {
+function getConfiguredCliPath(): string {
   const cfg = getConfig();
-  const cliPath = cfg.agentCliPath || "agent";
+  return getValidatedCliPath(cfg.agentCliPath || "agent");
+}
+
+export async function runAgentCliCommand(
+  args: string[],
+  options: {
+    cwd?: string;
+    timeoutMs?: number;
+    useWorkspaceRoot?: boolean;
+  } = {}
+): Promise<AgentCliCommandResult> {
+  const spawnCommand = createSpawnCommand(getConfiguredCliPath(), args, getEnhancedEnv());
+  const cwd = options.cwd
+    ? resolveWorkspaceCwd(options.cwd)
+    : options.useWorkspaceRoot
+      ? resolveWorkspaceCwd()
+      : undefined;
+  const timeoutMs = options.timeoutMs ?? 30_000;
 
   return new Promise((resolve) => {
-    const child = spawn(cliPath, ["--version"], {
-      shell: true,
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    let settled = false;
+
+    const child = spawn(spawnCommand.file, spawnCommand.args, {
+      cwd,
       stdio: ["ignore", "pipe", "pipe"],
-      timeout: 5000,
+      windowsHide: true,
       env: getEnhancedEnv(),
+      shell: false,
     });
-    let out = "";
-    child.stdout?.on("data", (d: Buffer) => (out += d.toString()));
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve({ found: true, path: cliPath, version: out.trim() });
-      } else {
-        resolve({ found: false, path: cliPath });
+
+    child.stdout?.on("data", (chunk: Buffer) => {
+      if (stdout.length < MAX_OUTPUT) {
+        stdout += chunk.toString("utf8").slice(0, MAX_OUTPUT - stdout.length);
       }
     });
-    child.on("error", () => resolve({ found: false, path: cliPath }));
+
+    child.stderr?.on("data", (chunk: Buffer) => {
+      if (stderr.length < MAX_OUTPUT) {
+        stderr += chunk.toString("utf8").slice(0, MAX_OUTPUT - stderr.length);
+      }
+    });
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // ignore
+      }
+    }, timeoutMs);
+
+    const finalize = (exitCode: number | null) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      resolve({
+        exitCode,
+        stdout,
+        stderr,
+        combinedOutput: `${stdout}${stderr}`.slice(0, MAX_OUTPUT),
+        timedOut,
+      });
+    };
+
+    child.on("close", (code) => finalize(code));
+    child.on("error", (err) => {
+      logError(`agent CLI error: ${err.message}`);
+      finalize(null);
+    });
   });
 }
 
-/** Check agent CLI status — used by setup wizard and status commands */
+async function detectAgentCli(): Promise<{ found: boolean; path: string; version?: string }> {
+  const cfg = getConfig();
+  const rawCliPath = cfg.agentCliPath || "agent";
+
+  try {
+    const result = await runAgentCliCommand(["--version"], { timeoutMs: 5_000 });
+    if (result.exitCode === 0) {
+      return {
+        found: true,
+        path: getConfiguredCliPath(),
+        version: result.combinedOutput.trim(),
+      };
+    }
+  } catch {
+    // invalid CLI path or launch failure, return not found below
+  }
+
+  return { found: false, path: rawCliPath };
+}
+
+export async function openAgentCliTerminal(title: string, args: string[]): Promise<void> {
+  const spawnCommand = createSpawnCommand(getConfiguredCliPath(), args, getEnhancedEnv());
+  const terminal = vscode.window.createTerminal({
+    name: title,
+    shellPath: spawnCommand.file,
+    shellArgs: spawnCommand.args,
+    env: getEnhancedEnv(),
+  });
+  terminal.show();
+}
+
+/** Check agent CLI status - used by setup wizard and status commands */
 export async function agentStatus(): Promise<{
   cliFound: boolean;
   cliPath: string;
@@ -80,95 +179,42 @@ export async function agentStatus(): Promise<{
   };
 }
 
-/** Resolve CLI path — if bare name, find full path via PATH lookup (needed for shell:false) */
-async function resolveCliPath(name: string): Promise<string> {
-  if (name.includes("/") || name.includes("\\")) return name; // already a path
-  const { execFileSync } = require("child_process");
-  try {
-    const resolved = execFileSync(
-      process.platform === "win32" ? "where" : "which",
-      [name],
-      { env: getEnhancedEnv(), encoding: "utf8", timeout: 3000 }
-    ).trim().split("\n")[0];
-    return resolved || name;
-  } catch {
-    return name; // fallback to bare name
-  }
-}
-
 /** Run Cursor Agent CLI with a prompt */
 export async function agentRun(params: AgentRunParams): Promise<AgentRunResult> {
   const cfg = getConfig();
 
   if (!cfg.agentEnabled) {
     throw new Error(
-      "Agent integration is disabled. Enable it in OpenClaw Settings → Agent section."
+      "Agent integration is disabled. Enable it in OpenClaw Settings -> Agent section."
     );
   }
 
-  const cliPath = await resolveCliPath(cfg.agentCliPath || "agent");
   const mode = params.mode || cfg.agentDefaultMode || "agent";
   const model = params.model || cfg.agentDefaultModel || undefined;
+  if (mode === "agent") {
+    await ensureMutationAllowed("run Cursor Agent in write mode", params.prompt.slice(0, 80));
+  }
 
-  // Build command
-  const args: string[] = ["--trust", "-p", params.prompt]; // --trust bypasses Workspace Trust prompt
+  const args: string[] = ["--trust", "-p", params.prompt];
   if (mode !== "agent") args.push(`--mode=${mode}`);
-  if (model) args.push(`--model`, model);
+  if (model) args.push("--model", model);
   args.push("--output-format", "text");
 
   logWarn(`agent.run: mode=${mode} model=${model || "auto"} prompt="${params.prompt.slice(0, 80)}..."`);
 
-  let cwd: string | undefined;
-  if (params.cwd) {
-    const path = require("path");
-    const folders = vscode.workspace.workspaceFolders;
-    cwd = folders ? path.resolve(folders[0].uri.fsPath, params.cwd) : undefined;
-  } else {
-    cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  }
-
-  const timeoutMs = params.timeoutMs ?? cfg.agentTimeoutMs ?? 300_000; // 5 min default
-
-  return new Promise((resolve) => {
-    let output = "";
-    let timedOut = false;
-    let settled = false;
-
-    const child = spawn(cliPath, args, {
-      cwd,
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-      env: getEnhancedEnv(),
-    });
-
-    const collect = (chunk: Buffer) => {
-      if (output.length < MAX_OUTPUT) {
-        output += chunk.toString("utf8").slice(0, MAX_OUTPUT - output.length);
-      }
-    };
-
-    child.stdout?.on("data", collect);
-    child.stderr?.on("data", collect);
-
-    const timer = setTimeout(() => {
-      timedOut = true;
-      try { child.kill("SIGKILL"); } catch {}
-    }, timeoutMs);
-
-    const finalize = (exitCode: number | null) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      log(`agent.run done: exit=${exitCode} timedOut=${timedOut} output=${output.length} chars`);
-      resolve({ exitCode, output, timedOut });
-    };
-
-    child.on("close", (code) => finalize(code));
-    child.on("error", (err) => {
-      logError(`agent.run error: ${err.message}`);
-      finalize(null);
-    });
+  const timeoutMs = params.timeoutMs ?? cfg.agentTimeoutMs ?? 300_000;
+  const result = await runAgentCliCommand(args, {
+    cwd: params.cwd,
+    timeoutMs,
+    useWorkspaceRoot: !params.cwd,
   });
+
+  log(`agent.run done: exit=${result.exitCode} timedOut=${result.timedOut} output=${result.combinedOutput.length} chars`);
+  return {
+    exitCode: result.exitCode,
+    output: result.combinedOutput,
+    timedOut: result.timedOut,
+  };
 }
 
 /** Show setup wizard if agent CLI is not configured */
@@ -183,11 +229,10 @@ export async function agentSetup(): Promise<{
     return {
       cliFound: true,
       isCursor: status.isCursor,
-      message: `✅ Agent CLI found: ${status.cliPath} (${status.cliVersion || "unknown version"})`,
+      message: `Agent CLI found: ${status.cliPath} (${status.cliVersion || "unknown version"})`,
     };
   }
 
-  // Show guided setup
   const installCmd = process.platform === "win32"
     ? "irm 'https://cursor.com/install?win32=true' | iex"
     : "curl https://cursor.com/install -fsSL | bash";
@@ -200,29 +245,29 @@ export async function agentSetup(): Promise<{
   );
 
   if (choice === "Install Now") {
-    // Open terminal with install command
     const term = vscode.window.createTerminal("Install Cursor Agent");
     term.show();
     term.sendText(installCmd);
     return {
       cliFound: false,
       isCursor: status.isCursor,
-      message: `Installing... Run the command in the terminal, then re-check with "OpenClaw: Agent Setup".`,
+      message: "Installing... Run the command in the terminal, then re-check with \"OpenClaw: Agent Setup\".",
     };
   }
 
   if (choice === "Enter Path") {
-    const path = await vscode.window.showInputBox({
+    const input = await vscode.window.showInputBox({
       prompt: "Path to Cursor Agent CLI binary",
       placeHolder: "/usr/local/bin/agent",
     });
-    if (path) {
+    if (input) {
+      getValidatedCliPath(input);
       const cfg = vscode.workspace.getConfiguration("openclaw");
-      await cfg.update("agent.cliPath", path, vscode.ConfigurationTarget.Global);
+      await cfg.update("agent.cliPath", input, vscode.ConfigurationTarget.Global);
       return {
         cliFound: false,
         isCursor: status.isCursor,
-        message: `Path saved. Restart or re-check to verify.`,
+        message: "Path saved. Restart or re-check to verify.",
       };
     }
   }

@@ -8,7 +8,8 @@ const VERSION = "0.1.0";
 
 export type InvokeHandler = (
   command: string,
-  params: unknown
+  params: unknown,
+  timeoutMs?: number
 ) => Promise<
   | { ok: true; payload?: unknown }
   | { ok: false; error: { code: string; message: string } }
@@ -291,7 +292,7 @@ export class GatewayClient {
     log(`← invoke: ${command}`);
 
     try {
-      const result = await this.opts.onInvoke(command, params);
+      const result = await this.opts.onInvoke(command, params, frame.timeoutMs ?? undefined);
       await this.sendInvokeResult(frame, result);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

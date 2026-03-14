@@ -1,7 +1,6 @@
 import * as vscode from "vscode";
-import { resolveWorkspacePath } from "../security";
+import { ensureMutationAllowed, resolveWorkspacePath } from "../security";
 import { log, logWarn } from "../logger";
-import { getConfig } from "../config";
 
 // --- vscode.file.read ---
 
@@ -17,14 +16,22 @@ export async function fileRead(params: FileReadParams): Promise<{ content: strin
   const totalLines = doc.lineCount;
   const language = doc.languageId;
 
-  const offset = params.offset ?? 0;
-  const limit = params.limit ?? totalLines;
-  const endLine = Math.min(offset + limit, totalLines);
+  const offset = Math.max(0, Math.floor(params.offset ?? 0));
+  const limit = Math.max(0, Math.floor(params.limit ?? totalLines));
+  const startLine = Math.min(offset, totalLines);
+  const endLine = Math.min(startLine + limit, totalLines);
+  const fullTextLength = doc.getText().length;
+  const startOffset = startLine >= totalLines
+    ? fullTextLength
+    : doc.offsetAt(new vscode.Position(startLine, 0));
+  const endOffset = endLine >= totalLines
+    ? fullTextLength
+    : doc.offsetAt(new vscode.Position(endLine, 0));
+  const content = doc.getText(
+    new vscode.Range(doc.positionAt(startOffset), doc.positionAt(endOffset))
+  );
 
-  const range = new vscode.Range(offset, 0, endLine, 0);
-  const content = doc.getText(range);
-
-  log(`file.read: ${params.path} (lines ${offset}-${endLine}/${totalLines})`);
+  log(`file.read: ${params.path} (lines ${startLine}-${endLine}/${totalLines})`);
   return { content, totalLines, language };
 }
 
@@ -36,23 +43,8 @@ interface FileWriteParams {
 }
 
 export async function fileWrite(params: FileWriteParams): Promise<{ ok: boolean; created: boolean }> {
-  const cfg = getConfig();
-  if (cfg.readOnly) {
-    throw new Error("Read-only mode is enabled");
-  }
-
   const uri = resolveWorkspacePath(params.path);
-
-  if (cfg.confirmWrites) {
-    const choice = await vscode.window.showWarningMessage(
-      `OpenClaw wants to write to: ${params.path}`,
-      "Allow",
-      "Deny"
-    );
-    if (choice !== "Allow") {
-      throw new Error("Write denied by user");
-    }
-  }
+  await ensureMutationAllowed("write to a file", params.path);
 
   let created = false;
   try {
@@ -77,20 +69,9 @@ interface FileEditParams {
 }
 
 export async function fileEdit(params: FileEditParams): Promise<{ ok: boolean; replacements: number }> {
-  const cfg = getConfig();
-  if (cfg.readOnly) {
-    throw new Error("Read-only mode is enabled");
-  }
-
-  if (cfg.confirmWrites) {
-    const choice = await vscode.window.showWarningMessage(
-      `OpenClaw wants to edit: ${params.path}`,
-      "Allow",
-      "Deny"
-    );
-    if (choice !== "Allow") {
-      throw new Error("Edit denied by user");
-    }
+  await ensureMutationAllowed("edit a file", params.path);
+  if (!params.oldText) {
+    throw new Error("oldText must be non-empty");
   }
 
   const uri = resolveWorkspacePath(params.path);
@@ -139,21 +120,7 @@ interface FileDeleteParams {
 }
 
 export async function fileDelete(params: FileDeleteParams): Promise<{ ok: boolean }> {
-  const cfg = getConfig();
-  if (cfg.readOnly) {
-    throw new Error("Read-only mode is enabled");
-  }
-
-  if (cfg.confirmWrites) {
-    const choice = await vscode.window.showWarningMessage(
-      `OpenClaw wants to delete: ${params.path}`,
-      "Allow",
-      "Deny"
-    );
-    if (choice !== "Allow") {
-      throw new Error("Delete denied by user");
-    }
-  }
+  await ensureMutationAllowed("delete a file", params.path);
 
   const uri = resolveWorkspacePath(params.path);
   const useTrash = params.useTrash !== false; // default true

@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { log } from "../logger";
 import { spawn } from "child_process";
+import { ensureMutationAllowed } from "../security";
 
 // ─── Helpers ───
 
@@ -157,6 +158,7 @@ interface GitStageParams {
 }
 
 export async function gitStage(params: GitStageParams): Promise<{ ok: boolean }> {
+  await ensureMutationAllowed("stage git changes", params.paths.join(", "));
   const cwd = getCwd();
   const result = await runGit(["add", ...params.paths], cwd);
   if (result.exitCode !== 0) throw new Error(result.stderr);
@@ -171,6 +173,7 @@ interface GitUnstageParams {
 }
 
 export async function gitUnstage(params: GitUnstageParams): Promise<{ ok: boolean }> {
+  await ensureMutationAllowed("unstage git changes", params.paths.join(", "));
   const cwd = getCwd();
   const result = await runGit(["reset", "HEAD", ...params.paths], cwd);
   if (result.exitCode !== 0) throw new Error(result.stderr);
@@ -186,6 +189,7 @@ interface GitCommitParams {
 }
 
 export async function gitCommit(params: GitCommitParams): Promise<{ ok: boolean; output: string }> {
+  await ensureMutationAllowed("create a git commit", params.message);
   const cwd = getCwd();
   const args = ["commit", "-m", params.message];
   if (params.amend) args.push("--amend");
@@ -204,6 +208,9 @@ interface GitStashParams {
 }
 
 export async function gitStash(params: GitStashParams): Promise<{ ok: boolean; output: string }> {
+  if (params.action !== "list") {
+    await ensureMutationAllowed("run a git stash operation", params.action);
+  }
   const cwd = getCwd();
   let args: string[];
   switch (params.action) {

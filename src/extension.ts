@@ -21,7 +21,7 @@ function createClient(): GatewayClient {
     displayName: cfg.displayName,
     commands: getRegisteredCommands(),
     caps: ["vscode"],
-    onInvoke: (command, params) => dispatchCommand(command, params),
+    onInvoke: (command, params, timeoutMs) => dispatchCommand(command, params, timeoutMs),
     onStateChange: (state: ConnectionState) => {
       updateState(state);
       log(`State: ${state}`);

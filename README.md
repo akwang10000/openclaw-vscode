@@ -221,10 +221,10 @@ All settings are under `openclaw.*` in VS Code settings, or use the Settings pan
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `openclaw.readOnly` | `false` | Block all write operations |
-| `openclaw.confirmWrites` | `false` | Prompt before each write |
+| `openclaw.readOnly` | `false` | Block all mutating commands exposed by the extension |
+| `openclaw.confirmWrites` | `false` | Prompt before mutating commands |
 | `openclaw.terminal.enabled` | `false` | Allow terminal commands |
-| `openclaw.terminal.allowlist` | `[]` | Whitelisted terminal commands |
+| `openclaw.terminal.allowlist` | `["git","npm","pnpm","npx","node","tsc"]` | Whitelisted terminal executables by basename |
 | `openclaw.commandTimeout` | `90` | Command timeout in seconds |
 
 ### Agent
@@ -243,12 +243,12 @@ All settings are under `openclaw.*` in VS Code settings, or use the Settings pan
 All file operations go through the VS Code Extension API — not direct filesystem access. This provides:
 - **Path traversal prevention**: Operations restricted to workspace directories
 - **No raw shell access**: Terminal commands disabled by default
-- **Write protection**: Optional read-only mode and write confirmation prompts
+- **Write protection**: Optional read-only mode and confirmation prompts across mutating commands
 
 ### Terminal Whitelist
-When terminal is enabled, only whitelisted commands are allowed:
+When terminal is enabled, only whitelisted executable names are allowed. Shell chaining and redirection are rejected:
 ```json
-"openclaw.terminal.allowlist": ["npm test", "npm run build", "git status"]
+"openclaw.terminal.allowlist": ["git", "npm", "pnpm", "node"]
 ```
 
 ### Device Identity

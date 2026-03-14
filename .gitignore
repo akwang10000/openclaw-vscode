@@ -1,5 +1,26 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
-*.vsix
-.vscode-test/
-.npm-cache/
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Identity (sensitive - device private key)
+.openclaw-vscode/
+
+# Testing
+coverage/
+
+# Temporary files
+*.tmp
+*.bak

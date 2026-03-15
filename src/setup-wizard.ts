@@ -77,6 +77,11 @@ export async function showSetupWizard(context: vscode.ExtensionContext): Promise
         return;
       }
 
+      if (type === "diagnose") {
+        await vscode.commands.executeCommand("openclaw.diagnoseConnection");
+        return;
+      }
+
       if (type === "agentLogin") {
         await openAgentCliTerminal("Cursor Agent Login", ["login"]);
         return;
@@ -240,12 +245,18 @@ code { background: var(--card); padding: 2px 6px; border-radius: 3px; font-size:
   <div class="step" id="s0">
     <div class="st">Step 1: Gateway Connection</div>
     <div class="sd">Connect this editor to your OpenClaw Gateway.</div>
-    <div class="field"><label>Host</label><input type="text" id="gatewayHost" value="${esc(data.gatewayHost)}" placeholder="127.0.0.1"><div class="hint">Required.</div></div>
+    <div class="field"><label>Host</label><input type="text" id="gatewayHost" value="${esc(data.gatewayHost)}" placeholder="127.0.0.1"><div class="hint">Required. Use 127.0.0.1 for a local Gateway.</div></div>
     <div class="field"><label>Port</label><input type="number" id="gatewayPort" value="${data.gatewayPort}"></div>
-    <div class="field"><label>Token</label><input type="password" id="gatewayToken" value="${esc(data.gatewayToken)}" placeholder="gateway.auth.token from config"></div>
+    <div class="field"><label>Token</label><input type="password" id="gatewayToken" value="${esc(data.gatewayToken)}" placeholder="gateway.auth.token from config"><div class="hint">For a local Gateway, copy gateway.auth.token from ~/.openclaw/openclaw.json.</div></div>
     <div class="row"><input type="checkbox" id="gatewayTls" ${data.gatewayTls ? "checked" : ""}><label for="gatewayTls">Use TLS (wss://)</label></div>
+    <div class="hint">Most local Gateways use ws://127.0.0.1:18789. Leave TLS off unless your Gateway is really serving wss://.</div>
     <div class="field"><label>Display Name</label><input type="text" id="displayName" value="${esc(data.displayName)}" placeholder="My VS Code"><div class="hint">Required.</div></div>
     <div class="row"><input type="checkbox" id="autoConnect" ${data.autoConnect ? "checked" : ""}><label for="autoConnect">Auto-connect on startup</label></div>
+    <div class="card">
+      <div class="card-title">Troubleshooting</div>
+      <div class="sta neu">If OpenClaw later shows connected and paired but commands are empty, your Gateway probably needs exact <code>vscode.*</code> entries in <code>gateway.nodes.allowCommands</code>.</div>
+      <div class="btn-row"><button class="btn btn-s btn-sm" id="diagnoseBtn">Run Diagnosis</button></div>
+    </div>
   </div>
 
   <div class="step" id="s1">
@@ -255,13 +266,13 @@ code { background: var(--card); padding: 2px 6px; border-radius: 3px; font-size:
     <div class="preset-btns">
       <button class="preset" data-preset="strict">Strict (read-only)</button>
       <button class="preset" data-preset="standard">Standard (confirm writes)</button>
-      <button class="preset" data-preset="trusted">Trusted (full access)</button>
+      <button class="preset" data-preset="trusted">Trusted (writes allowed)</button>
     </div>
     <div class="row"><input type="checkbox" id="readOnly" ${data.readOnly ? "checked" : ""}><label for="readOnly">Read-only mode (blocks all mutating commands)</label></div>
     <div class="row"><input type="checkbox" id="confirmWrites" ${data.confirmWrites ? "checked" : ""}><label for="confirmWrites">Confirm before mutating commands</label></div>
     <div style="margin-top:16px"><div class="sd" style="font-weight:500;color:var(--fg)">Terminal access</div></div>
     <div class="row"><input type="checkbox" id="terminalEnabled" ${data.terminalEnabled ? "checked" : ""}><label for="terminalEnabled">Enable terminal commands</label></div>
-    <div class="field"><label>Allowlist</label><input type="text" id="terminalAllowlist" value="${esc(data.terminalAllowlist)}" placeholder="git, npm, pnpm"><div class="hint">Comma-separated executable names only. Empty is allowed only when terminal access is disabled.</div></div>
+    <div class="field"><label>Allowlist</label><input type="text" id="terminalAllowlist" value="${esc(data.terminalAllowlist)}" placeholder="git, npm, pnpm"><div class="hint">Comma-separated executable names only. Empty is allowed only when terminal access is disabled, and <code>*</code> is not supported.</div></div>
   </div>
 
   <div class="step" id="s2">
@@ -401,14 +412,14 @@ function applyPreset(preset) {
   if (preset === 'standard') {
     readOnly.checked = false;
     confirmWrites.checked = true;
-    terminalEnabled.checked = true;
+    terminalEnabled.checked = false;
     terminalAllowlist.value = 'git, npm, pnpm, npx, node, tsc';
   }
   if (preset === 'trusted') {
     readOnly.checked = false;
     confirmWrites.checked = false;
     terminalEnabled.checked = true;
-    terminalAllowlist.value = '*';
+    terminalAllowlist.value = 'git, npm, pnpm, npx, node, tsc';
   }
 }
 
@@ -431,6 +442,7 @@ document.getElementById('btnNext').addEventListener('click', () => {
 });
 document.getElementById('installCliBtn').addEventListener('click', () => vscode.postMessage({ type: 'installCli' }));
 document.getElementById('detectCliBtn').addEventListener('click', () => vscode.postMessage({ type: 'detectCli' }));
+document.getElementById('diagnoseBtn').addEventListener('click', () => vscode.postMessage({ type: 'diagnose' }));
 document.getElementById('agentLoginBtn').addEventListener('click', () => vscode.postMessage({ type: 'agentLogin' }));
 document.getElementById('checkAuthBtn').addEventListener('click', () => vscode.postMessage({ type: 'checkAuth' }));
 document.getElementById('loadModelsBtn').addEventListener('click', () => {

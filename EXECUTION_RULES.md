@@ -4,10 +4,10 @@
 This file records our working plan and repository rules so future tasks follow the same execution standard.
 
 ## Current Plan
-1. Prioritize security hardening and runtime resilience before new feature work.
-2. Close boundary gaps first: canonical workspace containment, webview CSP, and Gateway request lifecycle.
-3. Fix high-signal usability issues in the same pass when they are directly adjacent to the security work.
-4. Keep implementation, tests, and design docs aligned in the same task whenever practical.
+1. Prioritize usability hardening on top of the recent security fixes before adding new features.
+2. Reduce first-run friction first: connection diagnosis, clearer setup guidance, and accurate command examples.
+3. Keep implementation, tests, and docs aligned in the same task whenever practical.
+4. Capture repeated operator rules and troubleshooting guidance in-repo instead of relying on chat history.
 5. Before stopping after a completed task, sync the project state to the remote repository.
 
 ## Working Rules

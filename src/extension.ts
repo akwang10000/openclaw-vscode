@@ -8,6 +8,7 @@ import { showSettingsPanel } from "./settings-panel";
 import { ActivityViewProvider } from "./activity-panel";
 import { agentSetup } from "./commands/agent";
 import { showSetupWizard } from "./setup-wizard";
+import { runConnectionDiagnosis } from "./connection-diagnostics";
 
 let client: GatewayClient | null = null;
 
@@ -59,6 +60,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     vscode.commands.registerCommand("openclaw.showLog", () => {
       getOutputChannel().show();
+    }),
+
+    vscode.commands.registerCommand("openclaw.diagnoseConnection", async () => {
+      await runConnectionDiagnosis(client);
     }),
 
     vscode.commands.registerCommand("openclaw.settings", () => {

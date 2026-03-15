@@ -55,6 +55,9 @@ export function parseTerminalAllowlist(value: unknown): string[] {
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean);
+  if (allowlist.some((entry) => entry === "*")) {
+    throw new Error("Terminal allowlist must contain executable names, not '*'");
+  }
   return allowlist;
 }
 

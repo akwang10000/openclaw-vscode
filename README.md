@@ -111,12 +111,19 @@ ext install xiaoyaner-home.openclaw-node-vscode
 
 From your OpenClaw session:
 ```
-nodes invoke --node "Your Node Name" --command workspace.info
+nodes invoke --node "Your Node Name" --command vscode.workspace.info
 ```
+
+### Common first-run fixes
+
+- For a local Gateway, use `127.0.0.1:18789` with `openclaw.gatewayTls = false` unless your Gateway is explicitly serving `wss://`.
+- Copy the token from `gateway.auth.token` in `~/.openclaw/openclaw.json`.
+- If OpenClaw shows `connected: true` and `paired: true` but `commands: []`, check `gateway.nodes.allowCommands` and make sure it contains exact names such as `vscode.workspace.info` and `vscode.file.read`.
+- Run `OpenClaw: Diagnose Connection` in VS Code for a guided local check.
 
 ## Commands
 
-All commands are invoked through the OpenClaw Node protocol (`node.invoke.request`).
+All commands are invoked through the OpenClaw Node protocol (`node.invoke.request`). Use the full `vscode.*` command name when calling them from OpenClaw, for example `vscode.file.read` or `vscode.workspace.info`.
 
 ### File Operations
 
@@ -213,7 +220,7 @@ All settings are under `openclaw.*` in VS Code settings, or use the Settings pan
 | `openclaw.gatewayHost` | `""` | Gateway hostname or IP |
 | `openclaw.gatewayPort` | `18789` | Gateway WebSocket port |
 | `openclaw.gatewayToken` | `""` | Authentication token |
-| `openclaw.gatewayTls` | `false` | Use wss:// instead of ws:// |
+| `openclaw.gatewayTls` | `false` | Use wss:// instead of ws://. Leave this off for most local 127.0.0.1 Gateways |
 | `openclaw.autoConnect` | `true` | Connect on startup |
 | `openclaw.displayName` | `""` | Node display name (shown in `nodes status`) |
 
@@ -250,6 +257,12 @@ When terminal is enabled, only whitelisted executable names are allowed. Shell c
 ```json
 "openclaw.terminal.allowlist": ["git", "npm", "pnpm", "node"]
 ```
+
+### Troubleshooting Empty Commands
+If OpenClaw shows the VS Code node as connected and paired but the command list is empty:
+- Run `OpenClaw: Diagnose Connection` from the command palette.
+- Check `gateway.nodes.allowCommands` in `~/.openclaw/openclaw.json`.
+- Use exact command names such as `vscode.workspace.info`, not legacy names like `workspace.info`.
 
 ### Recent Security Hardening
 Recent releases tightened several high-risk edges so the extension behavior now matches its security model more closely:

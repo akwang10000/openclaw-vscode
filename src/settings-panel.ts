@@ -63,6 +63,11 @@ export function showSettingsPanel(context: vscode.ExtensionContext): void {
         return;
       }
 
+      if (type === "diagnose") {
+        await vscode.commands.executeCommand("openclaw.diagnoseConnection");
+        return;
+      }
+
       if (type === "installCli") {
         const cmd = process.platform === "win32"
           ? "irm 'https://cursor.com/install?win32=true' | iex"
@@ -189,6 +194,7 @@ function getHtml(data: SettingsData, cspSource: string, nonce: string): string {
   }
   .buttons {
     display: flex;
+    flex-wrap: wrap;
     gap: 10px;
     margin-top: 20px;
   }
@@ -216,6 +222,15 @@ function getHtml(data: SettingsData, cspSource: string, nonce: string): string {
     border-radius: 4px;
     color: var(--vscode-errorForeground, #f14c4c);
   }
+  .notice {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--vscode-widget-border, #444);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--vscode-editor-background) 85%, var(--vscode-button-background) 15%);
+    font-size: 0.85em;
+    line-height: 1.5;
+  }
 `,
     body: `
 <h1>OpenClaw Node</h1>
@@ -227,7 +242,7 @@ function getHtml(data: SettingsData, cspSource: string, nonce: string): string {
   <div class="field">
     <label>Host</label>
     <input type="text" id="gatewayHost" value="${escHtml(data.gatewayHost)}" placeholder="localhost">
-    <div class="hint">Required. Use a LAN or ZeroTier address for remote access.</div>
+    <div class="hint">Required. Use 127.0.0.1 for a local Gateway, or a LAN / tailnet address for remote access.</div>
   </div>
   <div class="field">
     <label>Port</label>
@@ -236,10 +251,17 @@ function getHtml(data: SettingsData, cspSource: string, nonce: string): string {
   <div class="field">
     <label>Token</label>
     <input type="password" id="gatewayToken" value="${escHtml(data.gatewayToken)}" placeholder="Gateway token">
+    <div class="hint">For a local Gateway, copy gateway.auth.token from ~/.openclaw/openclaw.json.</div>
   </div>
   <div class="checkbox-row">
     <input type="checkbox" id="gatewayTls" ${data.gatewayTls ? "checked" : ""}>
     <label for="gatewayTls">Use TLS (wss://)</label>
+  </div>
+  <div class="hint">Most local Gateways use plain ws://127.0.0.1:18789. Turn TLS on only if your Gateway is really serving wss://.</div>
+  <div class="notice">
+    If OpenClaw shows <code>connected: true</code> and <code>paired: true</code> but <code>commands: []</code>,
+    check <code>gateway.nodes.allowCommands</code> in OpenClaw and make sure it contains exact names such as
+    <code>vscode.workspace.info</code> and <code>vscode.file.read</code>.
   </div>
 </div>
 
@@ -277,7 +299,7 @@ function getHtml(data: SettingsData, cspSource: string, nonce: string): string {
   <div class="field">
     <label>Allowlist</label>
     <input type="text" id="terminalAllowlist" value="${escHtml(data.terminalAllowlist)}" placeholder="git, npm, pnpm">
-    <div class="hint">Comma-separated executable names only. If terminal access is enabled, this list cannot be empty.</div>
+    <div class="hint">Comma-separated executable names only. Wildcards such as <code>*</code> are not supported.</div>
   </div>
 </div>
 
@@ -329,6 +351,7 @@ function getHtml(data: SettingsData, cspSource: string, nonce: string): string {
 <div class="buttons">
   <button class="btn-primary" id="saveBtn">Save Settings</button>
   <button class="btn-secondary" id="saveConnectBtn">Save and Connect</button>
+  <button class="btn-secondary" id="diagnoseBtn">Run Diagnosis</button>
 </div>
 `,
     script: `
@@ -371,6 +394,7 @@ function getHtml(data: SettingsData, cspSource: string, nonce: string): string {
     showError('');
     vscode.postMessage({ type: 'saveAndConnect', data: getData() });
   });
+  document.getElementById('diagnoseBtn').addEventListener('click', () => vscode.postMessage({ type: 'diagnose' }));
   document.getElementById('installCliBtn').addEventListener('click', () => vscode.postMessage({ type: 'installCli' }));
   document.getElementById('agentLoginBtn').addEventListener('click', () => vscode.postMessage({ type: 'agentLogin' }));
   document.getElementById('loadModelsBtn').addEventListener('click', () => {

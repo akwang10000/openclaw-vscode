@@ -20,6 +20,7 @@
       { "command": "openclaw.connect", "title": "OpenClaw: Connect" },
       { "command": "openclaw.disconnect", "title": "OpenClaw: Disconnect" },
       { "command": "openclaw.showLog", "title": "OpenClaw: Show Log" },
+      { "command": "openclaw.diagnoseConnection", "title": "OpenClaw: Diagnose Connection" },
       { "command": "openclaw.toggleReadOnly", "title": "OpenClaw: Toggle Read-Only" },
       { "command": "openclaw.settings", "title": "OpenClaw: Settings" },
       { "command": "openclaw.agentSetup", "title": "OpenClaw: Agent Setup" },

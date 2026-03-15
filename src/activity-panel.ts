@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
-import { activityStore, type Activity } from "./activity-store";
+import { activityStore } from "./activity-store";
+import { buildWebviewHtml, createNonce } from "./webview-security";
 
-/** Sidebar Webview provider — shows in the secondary sidebar or panel */
+/** Sidebar Webview provider - shows in the secondary sidebar or panel */
 export class ActivityViewProvider implements vscode.WebviewViewProvider {
   static readonly viewType = "openclaw.activityView";
   private view?: vscode.WebviewView;
@@ -14,8 +15,9 @@ export class ActivityViewProvider implements vscode.WebviewViewProvider {
     _token: vscode.CancellationToken
   ): void {
     this.view = webviewView;
-    webviewView.webview.options = { enableScripts: true };
-    webviewView.webview.html = getHtml();
+    const nonce = createNonce();
+    webviewView.webview.options = { enableScripts: true, localResourceRoots: [] };
+    webviewView.webview.html = getHtml(webviewView.webview.cspSource, nonce);
 
     const update = () => {
       webviewView.webview.postMessage({
@@ -32,21 +34,25 @@ export class ActivityViewProvider implements vscode.WebviewViewProvider {
     });
 
     webviewView.webview.onDidReceiveMessage((msg) => {
-      if (msg.type === "clear") activityStore.clear();
+      const type =
+        msg && typeof msg === "object" && typeof (msg as { type?: unknown }).type === "string"
+          ? (msg as { type: string }).type
+          : "";
+      if (type === "clear") {
+        activityStore.clear();
+      }
     });
 
-    // Initial render
     update();
   }
 }
 
-function getHtml(): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
+function getHtml(cspSource: string, nonce: string): string {
+  return buildWebviewHtml({
+    title: "OpenClaw Activity",
+    cspSource,
+    nonce,
+    styles: `
   :root {
     --bg: var(--vscode-sideBar-background, #1e1e1e);
     --fg: var(--vscode-sideBar-foreground, #ccc);
@@ -60,7 +66,6 @@ function getHtml(): string {
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: var(--vscode-font-family); font-size: 12px; color: var(--fg); background: var(--bg); }
-
   .header { padding: 8px 10px 4px; display: flex; align-items: center; justify-content: space-between; }
   .stats { font-size: 11px; color: var(--muted); display: flex; gap: 8px; }
   .stats .ok { color: var(--ok); }
@@ -70,16 +75,13 @@ function getHtml(): string {
     background: transparent; color: var(--muted); cursor: pointer; border-radius: 3px;
   }
   .clear-btn:hover { color: var(--err); border-color: var(--err); }
-
   .filters { padding: 2px 10px 6px; display: flex; flex-wrap: wrap; gap: 3px; }
   .fbtn {
     font-size: 10px; padding: 1px 6px; border-radius: 8px; border: 1px solid var(--border);
     background: transparent; color: var(--muted); cursor: pointer;
   }
   .fbtn.active { background: var(--accent); color: #fff; border-color: transparent; }
-
   .timeline { padding: 0 6px 8px; }
-
   .card {
     border: 1px solid var(--border); border-radius: 5px; background: var(--card-bg);
     margin-bottom: 4px; overflow: hidden; cursor: pointer;
@@ -88,17 +90,14 @@ function getHtml(): string {
   .card.s-ok { border-left: 3px solid var(--ok); }
   .card.s-error { border-left: 3px solid var(--err); }
   .card.s-running { border-left: 3px solid var(--running); }
-
   .card-main { padding: 6px 8px; }
   .intent { font-size: 12px; font-weight: 500; line-height: 1.4; }
   .meta { display: flex; gap: 6px; align-items: center; margin-top: 3px; font-size: 10px; color: var(--muted); }
   .cmd { opacity: 0.7; }
-  .dur { }
   .time { margin-left: auto; }
   .badge-ok { color: var(--ok); }
   .badge-err { color: var(--err); }
   .badge-running { color: var(--running); }
-
   .details { display: none; padding: 0 8px 6px; border-top: 1px solid var(--border); margin-top: 4px; padding-top: 6px; }
   .card.expanded .details { display: block; }
   .dlabel { font-size: 10px; color: var(--muted); margin-bottom: 2px; }
@@ -112,76 +111,88 @@ function getHtml(): string {
   .empty { text-align: center; color: var(--muted); padding: 30px 10px; font-size: 11px; }
   .spinner { display: inline-block; width: 8px; height: 8px; border: 1.5px solid var(--running); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; }
   @keyframes spin { to { transform: rotate(360deg); } }
-</style>
-</head>
-<body>
+`,
+    body: `
   <div class="header">
     <div class="stats" id="stats"></div>
     <button class="clear-btn" id="clearBtn">Clear</button>
   </div>
   <div class="filters" id="filters"></div>
   <div class="timeline" id="timeline"></div>
-
-<script>
+`,
+    script: `
   const vscode = acquireVsCodeApi();
   let activities = [];
   let stats = {};
   let filter = "all";
-  const CATS = ["all","📁 File","✏️ Editor","🔍 Language","🌿 Git","🖥️ Terminal","🧪 Test","🐛 Debug","⚠️ Diagnostics","📦 Workspace"];
+  const CATS = ["all","File","Editor","Language","Git","Terminal","Test","Debug","Diagnostics","Workspace"];
 
   function fmt(ts) { return new Date(ts).toLocaleTimeString("en-GB",{hour12:false,hour:"2-digit",minute:"2-digit",second:"2-digit"}); }
-  function dur(ms) { if(ms==null) return ""; return ms<1000 ? ms+"ms" : (ms/1000).toFixed(1)+"s"; }
-  function esc(s) { const d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
-  function trunc(o,m) { const s=typeof o==="string"?o:JSON.stringify(o,null,2); if(!s) return "—"; return s.length>m ? s.slice(0,m)+"…" : s; }
+  function dur(ms) { if(ms==null) return ""; return ms < 1000 ? ms + "ms" : (ms / 1000).toFixed(1) + "s"; }
+  function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+  function trunc(o, max) {
+    const s = typeof o === "string" ? o : JSON.stringify(o, null, 2);
+    if (!s) return "-";
+    return s.length > max ? s.slice(0, max) + "..." : s;
+  }
+
+  function normalizeCategory(category) {
+    return typeof category === "string" ? category.replace(/^[^A-Za-z]+\\s*/, "") : "";
+  }
 
   function render() {
-    // Stats
     document.getElementById("stats").innerHTML =
-      '<span>' + stats.total + '</span>' +
-      '<span class="ok">✓' + stats.ok + '</span>' +
-      (stats.errors ? '<span class="err">✗' + stats.errors + '</span>' : '') +
-      (stats.running ? '<span class="badge-running">⏳' + stats.running + '</span>' : '');
+      '<span>' + (stats.total || 0) + '</span>' +
+      '<span class="ok">OK ' + (stats.ok || 0) + '</span>' +
+      ((stats.errors || 0) ? '<span class="err">Err ' + stats.errors + '</span>' : '') +
+      ((stats.running || 0) ? '<span class="badge-running">Run ' + stats.running + '</span>' : '');
 
-    // Filters
     document.getElementById("filters").innerHTML = CATS.map(c =>
-      '<button class="fbtn ' + (filter===c?"active":"") + '" data-c="' + c + '">' + (c==="all"?"All":c) + '</button>'
+      '<button class="fbtn ' + (filter === c ? "active" : "") + '" data-c="' + c + '">' + (c === "all" ? "All" : c) + '</button>'
     ).join("");
-    document.querySelectorAll(".fbtn").forEach(b => b.onclick = () => { filter=b.dataset.c; render(); });
+    document.querySelectorAll(".fbtn").forEach(b => b.onclick = () => { filter = b.dataset.c; render(); });
 
-    // Timeline
     const el = document.getElementById("timeline");
-    const list = filter==="all" ? activities : activities.filter(a=>a.category===filter);
-    if(!list.length) { el.innerHTML='<div class="empty">Waiting for commands…<br>Operations from your OpenClaw AI will appear here ✨</div>'; return; }
+    const list = filter === "all"
+      ? activities
+      : activities.filter(a => normalizeCategory(a.category) === filter);
+    if (!list.length) {
+      el.innerHTML = '<div class="empty">Waiting for commands.<br>Operations from your OpenClaw AI will appear here.</div>';
+      return;
+    }
 
     el.innerHTML = list.map(a => {
-      const icon = a.status==="ok" ? "✓" : a.status==="error" ? "✗" : '<span class="spinner"></span>';
-      return '<div class="card s-'+a.status+'" data-id="'+a.id+'">' +
+      const icon = a.status === "ok" ? "OK" : a.status === "error" ? "ERR" : '<span class="spinner"></span>';
+      return '<div class="card s-' + a.status + '" data-id="' + a.id + '">' +
         '<div class="card-main">' +
           '<div class="intent">' + esc(a.intent) + '</div>' +
           '<div class="meta">' +
-            '<span class="badge-'+a.status+'">'+icon+'</span>' +
-            '<span class="cmd">'+a.command.replace("vscode.","")+'</span>' +
-            '<span class="dur">'+dur(a.durationMs)+'</span>' +
-            '<span class="time">'+fmt(a.startedAt)+'</span>' +
+            '<span class="badge-' + a.status + '">' + icon + '</span>' +
+            '<span class="cmd">' + a.command.replace("vscode.", "") + '</span>' +
+            '<span class="dur">' + dur(a.durationMs) + '</span>' +
+            '<span class="time">' + fmt(a.startedAt) + '</span>' +
           '</div>' +
         '</div>' +
         '<div class="details">' +
-          '<div class="dlabel">Params</div><div class="dbox">'+esc(trunc(a.params,500))+'</div>' +
-          (a.status==="ok" && a.payload ? '<div class="dlabel">Result</div><div class="dbox">'+esc(trunc(a.payload,800))+'</div>' : '') +
-          (a.status==="error" && a.error ? '<div class="dlabel">Error</div><div class="dbox err">'+esc(a.error)+'</div>' : '') +
+          '<div class="dlabel">Params</div><div class="dbox">' + esc(trunc(a.params, 500)) + '</div>' +
+          (a.status === "ok" && a.payload ? '<div class="dlabel">Result</div><div class="dbox">' + esc(trunc(a.payload, 800)) + '</div>' : '') +
+          (a.status === "error" && a.error ? '<div class="dlabel">Error</div><div class="dbox err">' + esc(a.error) + '</div>' : '') +
         '</div></div>';
     }).join("");
 
     el.querySelectorAll(".card").forEach(c => c.onclick = () => c.classList.toggle("expanded"));
   }
 
-  document.getElementById("clearBtn").onclick = () => vscode.postMessage({type:"clear"});
+  document.getElementById("clearBtn").onclick = () => vscode.postMessage({ type: "clear" });
 
   window.addEventListener("message", e => {
-    if(e.data.type==="update") { activities=e.data.activities; stats=e.data.stats; render(); }
+    if (e.data.type === "update") {
+      activities = e.data.activities || [];
+      stats = e.data.stats || {};
+      render();
+    }
   });
   render();
-</script>
-</body>
-</html>`;
+`,
+  });
 }

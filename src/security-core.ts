@@ -12,9 +12,78 @@ export interface EffectiveTimeout {
   source: "local" | "remote";
 }
 
+export interface ContainedPathResolution {
+  rootPath: string;
+  canonicalRootPath: string;
+  resolvedPath: string;
+  canonicalPath: string;
+  exists: boolean;
+}
+
 const COMMAND_CONTROL_CHARS = new Set(["|", "&", ";", "<", ">", "`"]);
 const CLI_PATH_CONTROL_RE = /[`|<>&;$\r\n"]/;
 const WINDOWS_BATCH_RE = /\.(cmd|bat)$/i;
+
+function normalizeForComparison(value: string): string {
+  const normalized = path.resolve(value);
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+
+function isPathInsideRoot(rootPath: string, candidatePath: string): boolean {
+  const normalizedRoot = normalizeForComparison(rootPath);
+  const normalizedCandidate = normalizeForComparison(candidatePath);
+  if (normalizedRoot === normalizedCandidate) {
+    return true;
+  }
+  const relative = path.relative(normalizedRoot, normalizedCandidate);
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
+function findNearestExistingPath(targetPath: string): { existingPath: string; exists: boolean } {
+  let current = path.resolve(targetPath);
+  const { root } = path.parse(current);
+
+  while (!fs.existsSync(current)) {
+    const parent = path.dirname(current);
+    if (parent === current || current === root) {
+      break;
+    }
+    current = parent;
+  }
+
+  return { existingPath: current, exists: fs.existsSync(targetPath) };
+}
+
+export function resolveContainedPath(rootPath: string, relativePath: string): ContainedPathResolution {
+  const trimmed = relativePath.trim();
+  if (path.isAbsolute(trimmed)) {
+    throw new Error(`Absolute paths not allowed: ${relativePath}`);
+  }
+
+  const resolvedRootPath = path.resolve(rootPath);
+  const canonicalRootPath = fs.realpathSync.native(resolvedRootPath);
+  const resolvedPath = path.resolve(resolvedRootPath, trimmed || ".");
+  const { existingPath, exists } = findNearestExistingPath(resolvedPath);
+  const canonicalExistingPath = fs.realpathSync.native(existingPath);
+
+  if (!isPathInsideRoot(canonicalRootPath, canonicalExistingPath)) {
+    throw new Error(`Path escapes workspace: ${relativePath}`);
+  }
+
+  const relativeFromExisting = path.relative(existingPath, resolvedPath);
+  const canonicalPath = path.resolve(canonicalExistingPath, relativeFromExisting);
+  if (!isPathInsideRoot(canonicalRootPath, canonicalPath)) {
+    throw new Error(`Path escapes workspace: ${relativePath}`);
+  }
+
+  return {
+    rootPath: resolvedRootPath,
+    canonicalRootPath,
+    resolvedPath,
+    canonicalPath,
+    exists,
+  };
+}
 
 export function parseCommandString(command: string): ParsedCommand {
   const trimmed = command.trim();

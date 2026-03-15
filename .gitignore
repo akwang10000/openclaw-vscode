@@ -24,3 +24,4 @@ coverage/
 # Temporary files
 *.tmp
 *.bak
+.npm-cache/

@@ -254,9 +254,10 @@ When terminal is enabled, only whitelisted executable names are allowed. Shell c
 ### Recent Security Hardening
 Recent releases tightened several high-risk edges so the extension behavior now matches its security model more closely:
 - Terminal execution now parses commands safely, rejects shell control operators, and runs with `shell: false`
-- Working-directory parameters such as `cwd` must stay inside the workspace and can no longer escape via relative traversal
+- Working-directory parameters such as `cwd` must stay inside the canonical workspace and can no longer escape via relative traversal or symlink/junction indirection
 - `openclaw.readOnly` and `openclaw.confirmWrites` now apply across all mutating commands, including git operations, formatting, rename/code actions, terminal execution, and Agent write mode
 - Cursor Agent CLI integration now validates `agent.cliPath` and avoids shell-based command construction for version checks, auth checks, and model listing
+- Gateway-originated protocol requests now have explicit timeout cleanup instead of waiting indefinitely on stuck pending operations
 
 ### Device Identity
 Each extension instance generates a unique Ed25519 keypair (stored at `~/.openclaw-vscode/device.json`). The Gateway must approve each device before it can execute commands.

@@ -1,6 +1,9 @@
 import * as vscode from "vscode";
 import { log } from "./logger";
-import { getValidatedCliPath } from "./security";
+import { runAgentCliCommand, openAgentCliTerminal } from "./commands/agent";
+import { applySettings } from "./settings-apply";
+import { coerceMessageType, parseSettingsInput } from "./settings-validation";
+import { buildWebviewHtml, createNonce } from "./webview-security";
 
 let panel: vscode.WebviewPanel | null = null;
 
@@ -14,97 +17,91 @@ export function showSettingsPanel(context: vscode.ExtensionContext): void {
     "openclawSettings",
     "OpenClaw Settings",
     vscode.ViewColumn.One,
-    { enableScripts: true }
+    { enableScripts: true, localResourceRoots: [] }
   );
 
   const cfg = vscode.workspace.getConfiguration("openclaw");
-
-  panel.webview.html = getHtml({
-    gatewayHost: cfg.get<string>("gatewayHost", "127.0.0.1"),
-    gatewayPort: cfg.get<number>("gatewayPort", 18789),
-    gatewayToken: cfg.get<string>("gatewayToken", ""),
-    gatewayTls: cfg.get<boolean>("gatewayTls", false),
-    autoConnect: cfg.get<boolean>("autoConnect", false),
-    displayName: cfg.get<string>("displayName", "VS Code"),
-    readOnly: cfg.get<boolean>("readOnly", false),
-    confirmWrites: cfg.get<boolean>("confirmWrites", false),
-    terminalEnabled: cfg.get<boolean>("terminal.enabled", false),
-    terminalAllowlist: cfg.get<string[]>("terminal.allowlist", ["git", "npm", "pnpm", "npx", "node", "tsc"]).join(", "),
-    agentEnabled: cfg.get<boolean>("agent.enabled", false),
-    agentCliPath: cfg.get<string>("agent.cliPath", "agent"),
-    agentDefaultMode: cfg.get<string>("agent.defaultMode", "agent"),
-    agentDefaultModel: cfg.get<string>("agent.defaultModel", ""),
-    agentTimeoutMs: cfg.get<number>("agent.timeoutMs", 300000),
-  });
+  const nonce = createNonce();
+  panel.webview.html = getHtml(
+    {
+      gatewayHost: cfg.get<string>("gatewayHost", "127.0.0.1"),
+      gatewayPort: cfg.get<number>("gatewayPort", 18789),
+      gatewayToken: cfg.get<string>("gatewayToken", ""),
+      gatewayTls: cfg.get<boolean>("gatewayTls", false),
+      autoConnect: cfg.get<boolean>("autoConnect", false),
+      displayName: cfg.get<string>("displayName", "VS Code"),
+      readOnly: cfg.get<boolean>("readOnly", false),
+      confirmWrites: cfg.get<boolean>("confirmWrites", false),
+      terminalEnabled: cfg.get<boolean>("terminal.enabled", false),
+      terminalAllowlist: cfg.get<string[]>("terminal.allowlist", ["git", "npm", "pnpm", "npx", "node", "tsc"]).join(", "),
+      agentEnabled: cfg.get<boolean>("agent.enabled", false),
+      agentCliPath: cfg.get<string>("agent.cliPath", "agent"),
+      agentDefaultMode: cfg.get<string>("agent.defaultMode", "agent"),
+      agentDefaultModel: cfg.get<string>("agent.defaultModel", ""),
+      agentTimeoutMs: cfg.get<number>("agent.timeoutMs", 300000),
+    },
+    panel.webview.cspSource,
+    nonce
+  );
 
   panel.webview.onDidReceiveMessage(async (msg) => {
-    if (msg.type === "save") {
-      const data = msg.data;
-      const cfg = vscode.workspace.getConfiguration("openclaw");
-      getValidatedCliPath(data.agentCliPath || "agent");
-      await cfg.update("gatewayHost", data.gatewayHost, vscode.ConfigurationTarget.Global);
-      await cfg.update("gatewayPort", Number(data.gatewayPort), vscode.ConfigurationTarget.Global);
-      await cfg.update("gatewayToken", data.gatewayToken, vscode.ConfigurationTarget.Global);
-      await cfg.update("gatewayTls", data.gatewayTls, vscode.ConfigurationTarget.Global);
-      await cfg.update("autoConnect", data.autoConnect, vscode.ConfigurationTarget.Global);
-      await cfg.update("displayName", data.displayName, vscode.ConfigurationTarget.Global);
-      await cfg.update("readOnly", data.readOnly, vscode.ConfigurationTarget.Global);
-      await cfg.update("confirmWrites", data.confirmWrites, vscode.ConfigurationTarget.Global);
-      await cfg.update("terminal.enabled", data.terminalEnabled, vscode.ConfigurationTarget.Global);
-      await cfg.update("terminal.allowlist", data.terminalAllowlist.split(",").map((s: string) => s.trim()).filter(Boolean), vscode.ConfigurationTarget.Global);
-      await cfg.update("agent.enabled", data.agentEnabled, vscode.ConfigurationTarget.Global);
-      await cfg.update("agent.cliPath", data.agentCliPath, vscode.ConfigurationTarget.Global);
-      await cfg.update("agent.defaultMode", data.agentDefaultMode, vscode.ConfigurationTarget.Global);
-      await cfg.update("agent.defaultModel", data.agentDefaultModel, vscode.ConfigurationTarget.Global);
-      await cfg.update("agent.timeoutMs", Number(data.agentTimeoutMs), vscode.ConfigurationTarget.Global);
-
-      log("Settings saved");
-      vscode.window.showInformationMessage("OpenClaw settings saved! Use 'OpenClaw: Connect' to connect.");
-    }
-
-    if (msg.type === "connect") {
-      await vscode.commands.executeCommand("openclaw.connect");
-    }
-
-    if (msg.type === "installCli") {
-      const cmd = process.platform === "win32"
-        ? "irm 'https://cursor.com/install?win32=true' | iex"
-        : "curl https://cursor.com/install -fsSL | bash";
-      const term = vscode.window.createTerminal("Install Cursor Agent");
-      term.show();
-      term.sendText(cmd);
-    }
-
-    if (msg.type === "agentLogin") {
-      try {
-        const { openAgentCliTerminal } = await import("./commands/agent");
-        await openAgentCliTerminal("Cursor Agent Login", ["login"]);
-      } catch (e: any) {
-        vscode.window.showErrorMessage(e.message);
+    const type = coerceMessageType(msg);
+    try {
+      if (type === "save" || type === "saveAndConnect") {
+        const settings = parseSettingsInput((msg as { data?: unknown }).data);
+        await applySettings(settings);
+        log("Settings saved");
+        vscode.window.showInformationMessage("OpenClaw settings saved.");
+        if (type === "saveAndConnect") {
+          await vscode.commands.executeCommand("openclaw.connect");
+        }
+        return;
       }
-    }
 
-    if (msg.type === "loadModels") {
-      try {
-        const { runAgentCliCommand } = await import("./commands/agent");
+      if (type === "connect") {
+        await vscode.commands.executeCommand("openclaw.connect");
+        return;
+      }
+
+      if (type === "installCli") {
+        const cmd = process.platform === "win32"
+          ? "irm 'https://cursor.com/install?win32=true' | iex"
+          : "curl https://cursor.com/install -fsSL | bash";
+        const term = vscode.window.createTerminal("Install Cursor Agent");
+        term.show();
+        term.sendText(cmd);
+        return;
+      }
+
+      if (type === "agentLogin") {
+        await openAgentCliTerminal("Cursor Agent Login", ["login"]);
+        return;
+      }
+
+      if (type === "loadModels") {
         const result = await runAgentCliCommand(["--list-models", "--trust"], { timeoutMs: 10_000 });
         const out = result.combinedOutput.trim();
-        if (result.exitCode === 0 && out) {
-          const models = out.split("\n")
-            .map((l: string) => l.trim())
-            .filter((l: string) => l && !l.startsWith("Available") && !l.startsWith("---"));
-            // Parse "id - Display Name" format
-          const parsed = models.map((m: string) => {
-            const dash = m.indexOf(" - ");
-            return dash > 0 ? { id: m.slice(0, dash).trim(), label: m.trim() } : { id: m, label: m };
-          });
-          panel?.webview.postMessage({ type: "modelsLoaded", models: parsed });
-        } else {
-          panel?.webview.postMessage({ type: "modelsError", error: "Failed to load models. Is CLI authenticated?" });
+        if (result.exitCode !== 0 || !out) {
+          panel?.webview.postMessage({ type: "modelsError", error: "Failed to load models. Make sure the CLI is installed and authenticated." });
+          return;
         }
-      } catch (e: any) {
-        panel?.webview.postMessage({ type: "modelsError", error: e.message });
+
+        const models = out
+          .split("\n")
+          .map((line) => line.trim())
+          .filter((line) => line && !line.startsWith("Available") && !line.startsWith("---"))
+          .map((model) => {
+            const dash = model.indexOf(" - ");
+            return dash > 0
+              ? { id: model.slice(0, dash).trim(), label: model.trim() }
+              : { id: model, label: model };
+          });
+        panel?.webview.postMessage({ type: "modelsLoaded", models });
       }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(message);
+      panel?.webview.postMessage({ type: "settingsError", error: message });
     }
   });
 
@@ -131,18 +128,18 @@ interface SettingsData {
   agentTimeoutMs: number;
 }
 
-function getHtml(data: SettingsData): string {
-  return /*html*/ `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<style>
+function getHtml(data: SettingsData, cspSource: string, nonce: string): string {
+  return buildWebviewHtml({
+    title: "OpenClaw Settings",
+    cspSource,
+    nonce,
+    styles: `
   body {
     font-family: var(--vscode-font-family, system-ui);
     padding: 20px;
     color: var(--vscode-foreground);
     background: var(--vscode-editor-background);
-    max-width: 600px;
+    max-width: 640px;
   }
   h1 { font-size: 1.5em; margin-bottom: 4px; }
   .subtitle { color: var(--vscode-descriptionForeground); margin-bottom: 24px; font-size: 0.9em; }
@@ -176,21 +173,17 @@ function getHtml(data: SettingsData): string {
     font-size: 0.9em;
     box-sizing: border-box;
   }
-  input:focus, select:focus {
-    outline: 1px solid var(--vscode-focusBorder);
-    border-color: var(--vscode-focusBorder);
-  }
-  .checkbox-row {
+  .checkbox-row, .row {
     display: flex;
     align-items: center;
     gap: 8px;
     margin-bottom: 8px;
   }
-  .checkbox-row input[type="checkbox"] {
+  .checkbox-row input[type="checkbox"], .row input[type="checkbox"] {
     width: 16px;
     height: 16px;
   }
-  .checkbox-row label {
+  .checkbox-row label, .row label {
     margin: 0;
     font-weight: normal;
   }
@@ -211,25 +204,30 @@ function getHtml(data: SettingsData): string {
     background: var(--vscode-button-background);
     color: var(--vscode-button-foreground);
   }
-  .btn-primary:hover { background: var(--vscode-button-hoverBackground); }
   .btn-secondary {
     background: var(--vscode-button-secondaryBackground);
     color: var(--vscode-button-secondaryForeground);
   }
-  .btn-secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
-</style>
-</head>
-<body>
-
-<h1>🔌 OpenClaw Node</h1>
+  .error {
+    display: none;
+    margin-bottom: 16px;
+    padding: 10px 12px;
+    border: 1px solid var(--vscode-errorForeground, #f14c4c);
+    border-radius: 4px;
+    color: var(--vscode-errorForeground, #f14c4c);
+  }
+`,
+    body: `
+<h1>OpenClaw Node</h1>
 <div class="subtitle">Connect your IDE to OpenClaw Gateway</div>
+<div id="error" class="error"></div>
 
 <div class="section">
-  <div class="section-title">🌐 Gateway Connection</div>
+  <div class="section-title">Gateway Connection</div>
   <div class="field">
     <label>Host</label>
     <input type="text" id="gatewayHost" value="${escHtml(data.gatewayHost)}" placeholder="localhost">
-    <div class="hint">Gateway IP or hostname (use ZeroTier IP for remote access)</div>
+    <div class="hint">Required. Use a LAN or ZeroTier address for remote access.</div>
   </div>
   <div class="field">
     <label>Port</label>
@@ -237,8 +235,7 @@ function getHtml(data: SettingsData): string {
   </div>
   <div class="field">
     <label>Token</label>
-    <input type="password" id="gatewayToken" value="${escHtml(data.gatewayToken)}" placeholder="Your gateway token">
-    <div class="hint">Same token used by other OpenClaw Nodes</div>
+    <input type="password" id="gatewayToken" value="${escHtml(data.gatewayToken)}" placeholder="Gateway token">
   </div>
   <div class="checkbox-row">
     <input type="checkbox" id="gatewayTls" ${data.gatewayTls ? "checked" : ""}>
@@ -247,11 +244,11 @@ function getHtml(data: SettingsData): string {
 </div>
 
 <div class="section">
-  <div class="section-title">⚙️ Node Settings</div>
+  <div class="section-title">Node Settings</div>
   <div class="field">
     <label>Display Name</label>
-    <input type="text" id="displayName" value="${escHtml(data.displayName)}" placeholder="Cursor MacBook">
-    <div class="hint">How this node appears in Gateway</div>
+    <input type="text" id="displayName" value="${escHtml(data.displayName)}" placeholder="My VS Code">
+    <div class="hint">Required. This is how the node appears in Gateway.</div>
   </div>
   <div class="checkbox-row">
     <input type="checkbox" id="autoConnect" ${data.autoConnect ? "checked" : ""}>
@@ -260,10 +257,10 @@ function getHtml(data: SettingsData): string {
 </div>
 
 <div class="section">
-  <div class="section-title">🔒 Security</div>
+  <div class="section-title">Security</div>
   <div class="checkbox-row">
     <input type="checkbox" id="readOnly" ${data.readOnly ? "checked" : ""}>
-    <label for="readOnly">Read-only mode (block all mutating commands)</label>
+    <label for="readOnly">Read-only mode (blocks all mutating commands)</label>
   </div>
   <div class="checkbox-row">
     <input type="checkbox" id="confirmWrites" ${data.confirmWrites ? "checked" : ""}>
@@ -272,7 +269,7 @@ function getHtml(data: SettingsData): string {
 </div>
 
 <div class="section">
-  <div class="section-title">🖥️ Terminal</div>
+  <div class="section-title">Terminal</div>
   <div class="checkbox-row">
     <input type="checkbox" id="terminalEnabled" ${data.terminalEnabled ? "checked" : ""}>
     <label for="terminalEnabled">Enable terminal commands</label>
@@ -280,35 +277,35 @@ function getHtml(data: SettingsData): string {
   <div class="field">
     <label>Allowlist</label>
     <input type="text" id="terminalAllowlist" value="${escHtml(data.terminalAllowlist)}" placeholder="git, npm, pnpm">
-    <div class="hint">Comma-separated executable names only, for example: git, npm, node</div>
+    <div class="hint">Comma-separated executable names only. If terminal access is enabled, this list cannot be empty.</div>
   </div>
 </div>
 
 <div class="section">
-  <div class="section-title">🤖 Agent (Cursor CLI)</div>
+  <div class="section-title">Agent (Cursor CLI)</div>
   <div class="hint" style="margin-bottom:8px">
     Integrate with <a href="https://cursor.com/docs/cli/overview">Cursor Agent CLI</a> to delegate coding tasks.
   </div>
   <div style="display:flex;gap:6px;margin-bottom:10px">
-    <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="vscode.postMessage({type:'installCli'})">📥 Install CLI</button>
-    <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="vscode.postMessage({type:'agentLogin'})">🔑 Login</button>
+    <button class="btn-secondary" style="padding:4px 10px;font-size:11px" id="installCliBtn">Install CLI</button>
+    <button class="btn-secondary" style="padding:4px 10px;font-size:11px" id="agentLoginBtn">Login</button>
   </div>
   <div class="row">
-    <input type="checkbox" id="agentEnabled" ${data.agentEnabled ? "checked" : ""} onchange="document.getElementById('agentFields').style.display=this.checked?'block':'none'">
+    <input type="checkbox" id="agentEnabled" ${data.agentEnabled ? "checked" : ""}>
     <label for="agentEnabled">Enable Agent integration</label>
   </div>
   <div id="agentFields" style="display:${data.agentEnabled ? "block" : "none"}">
     <div class="field">
       <label>CLI Path</label>
       <input type="text" id="agentCliPath" value="${escHtml(data.agentCliPath)}" placeholder="agent">
-      <div class="hint">Path to Cursor Agent CLI binary (default: "agent")</div>
+      <div class="hint">Use a bare executable name or an absolute path.</div>
     </div>
     <div class="field">
       <label>Default Mode</label>
       <select id="agentDefaultMode">
-        <option value="agent" ${data.agentDefaultMode === "agent" ? "selected" : ""}>Agent — Full access, complex tasks</option>
-        <option value="plan" ${data.agentDefaultMode === "plan" ? "selected" : ""}>Plan — Design first, then code</option>
-        <option value="ask" ${data.agentDefaultMode === "ask" ? "selected" : ""}>Ask — Read-only exploration</option>
+        <option value="agent" ${data.agentDefaultMode === "agent" ? "selected" : ""}>Agent - Full access</option>
+        <option value="plan" ${data.agentDefaultMode === "plan" ? "selected" : ""}>Plan - Design first</option>
+        <option value="ask" ${data.agentDefaultMode === "ask" ? "selected" : ""}>Ask - Read-only</option>
       </select>
     </div>
     <div class="field">
@@ -316,27 +313,32 @@ function getHtml(data: SettingsData): string {
       <div style="display:flex;gap:6px;align-items:center">
         <select id="agentDefaultModel" style="flex:1">
           <option value="">auto (Cursor decides)</option>
-          ${data.agentDefaultModel && data.agentDefaultModel !== "" ? `<option value="${escHtml(data.agentDefaultModel)}" selected>${escHtml(data.agentDefaultModel)}</option>` : ""}
+          ${data.agentDefaultModel ? `<option value="${escHtml(data.agentDefaultModel)}" selected>${escHtml(data.agentDefaultModel)}</option>` : ""}
         </select>
-        <button class="btn-secondary" style="padding:4px 10px;font-size:11px;white-space:nowrap" onclick="vscode.postMessage({type:'loadModels'})">⟳ Load</button>
+        <button class="btn-secondary" style="padding:4px 10px;font-size:11px;white-space:nowrap" id="loadModelsBtn">Load</button>
       </div>
-      <div class="hint">Click "Load" to fetch available models from Cursor CLI</div>
+      <div class="hint">Load models after the CLI is installed and authenticated.</div>
     </div>
     <div class="field">
       <label>Timeout (ms)</label>
       <input type="number" id="agentTimeoutMs" value="${data.agentTimeoutMs}" placeholder="300000">
-      <div class="hint">Max time for agent tasks (default: 300000 = 5 min)</div>
     </div>
   </div>
 </div>
 
 <div class="buttons">
-  <button class="btn-primary" onclick="save()">💾 Save Settings</button>
-  <button class="btn-secondary" onclick="saveAndConnect()">🔌 Save & Connect</button>
+  <button class="btn-primary" id="saveBtn">Save Settings</button>
+  <button class="btn-secondary" id="saveConnectBtn">Save and Connect</button>
 </div>
-
-<script>
+`,
+    script: `
   const vscode = acquireVsCodeApi();
+
+  function showError(message) {
+    const box = document.getElementById('error');
+    box.textContent = message || '';
+    box.style.display = message ? 'block' : 'none';
+  }
 
   function getData() {
     return {
@@ -358,39 +360,50 @@ function getHtml(data: SettingsData): string {
     };
   }
 
-  function save() {
+  document.getElementById('agentEnabled').addEventListener('change', (event) => {
+    document.getElementById('agentFields').style.display = event.target.checked ? 'block' : 'none';
+  });
+  document.getElementById('saveBtn').addEventListener('click', () => {
+    showError('');
     vscode.postMessage({ type: 'save', data: getData() });
-  }
+  });
+  document.getElementById('saveConnectBtn').addEventListener('click', () => {
+    showError('');
+    vscode.postMessage({ type: 'saveAndConnect', data: getData() });
+  });
+  document.getElementById('installCliBtn').addEventListener('click', () => vscode.postMessage({ type: 'installCli' }));
+  document.getElementById('agentLoginBtn').addEventListener('click', () => vscode.postMessage({ type: 'agentLogin' }));
+  document.getElementById('loadModelsBtn').addEventListener('click', () => {
+    showError('');
+    vscode.postMessage({ type: 'loadModels' });
+  });
 
-  function saveAndConnect() {
-    vscode.postMessage({ type: 'save', data: getData() });
-    setTimeout(() => vscode.postMessage({ type: 'connect' }), 300);
-  }
-
-  // Listen for messages from extension
   window.addEventListener('message', (event) => {
-    const msg = event.data;
+    const msg = event.data || {};
     if (msg.type === 'modelsLoaded') {
       const sel = document.getElementById('agentDefaultModel');
       const current = sel.value;
       sel.innerHTML = '<option value="">auto (Cursor decides)</option>';
-      msg.models.forEach(m => {
+      msg.models.forEach((model) => {
         const opt = document.createElement('option');
-        opt.value = m.id;
-        opt.textContent = m.label;
-        if (m.id === current) opt.selected = true;
+        opt.value = model.id;
+        opt.textContent = model.label;
+        if (model.id === current) opt.selected = true;
         sel.appendChild(opt);
       });
     }
-    if (msg.type === 'modelsError') {
-      alert(msg.error);
+    if (msg.type === 'modelsError' || msg.type === 'settingsError') {
+      showError(msg.error || 'Unknown error');
     }
   });
-</script>
-</body>
-</html>`;
+`,
+  });
 }
 
 function escHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }

@@ -104,9 +104,10 @@ cursor --install-extension openclaw-node-vscode-x.y.z.vsix
 ### 近期安全修复
 
 - 终端执行现在会先安全解析命令，拒绝管道、重定向、`&&`、`;` 等 shell 拼接语法，并以 `shell: false` 运行
-- `cwd` 等工作目录参数现在必须严格位于当前工作区内，不能再通过相对路径跳出工作区
+- `cwd` 等工作目录参数现在必须严格位于工作区的规范化真实路径内，不能再通过相对路径或符号链接 / junction 跳出工作区
 - `openclaw.readOnly` 和 `openclaw.confirmWrites` 已覆盖所有会产生修改的命令，包括 Git 操作、格式化、重命名/代码动作、终端执行以及 Agent 写模式
 - Cursor Agent CLI 集成现在会校验 `agent.cliPath`，并移除了版本检测、鉴权检查、模型列表中的 shell 拼接执行方式
+- Gateway 侧发起的协议请求现在具备显式超时清理，不会再因为挂起请求长期等待
 
 ## 开发
 

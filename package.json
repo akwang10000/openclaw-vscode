@@ -132,7 +132,7 @@
     "watch": "npm run build -- --watch",
     "package": "vsce package",
     "lint": "tsc --noEmit",
-    "test": "node test/security-core.test.ts"
+    "test": "node --test test/*.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

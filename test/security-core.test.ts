@@ -1,10 +1,14 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 
 const {
   computeEffectiveTimeout,
   evaluateMutationPolicy,
   parseCommandString,
+  resolveContainedPath,
   validateCliPath,
 } = require("../src/security-core.ts");
 
@@ -59,4 +63,44 @@ test("evaluateMutationPolicy matches readOnly and confirmWrites matrix", () => {
   assert.deepEqual(evaluateMutationPolicy(false, true), { blocked: false, needsConfirmation: true });
   assert.deepEqual(evaluateMutationPolicy(true, false), { blocked: true, needsConfirmation: false });
   assert.deepEqual(evaluateMutationPolicy(true, true), { blocked: true, needsConfirmation: false });
+});
+
+test("resolveContainedPath keeps normal child paths inside the workspace", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-security-"));
+  const subdir = path.join(root, "src");
+  fs.mkdirSync(subdir);
+
+  const resolved = resolveContainedPath(root, "src/example.ts");
+  assert.equal(resolved.exists, false);
+  assert.equal(resolved.canonicalPath, path.join(subdir, "example.ts"));
+
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("resolveContainedPath rejects lexical traversal outside the workspace", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-security-"));
+
+  assert.throws(
+    () => resolveContainedPath(root, "../outside.txt"),
+    /Path escapes workspace/
+  );
+
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("resolveContainedPath rejects symlink escapes through existing ancestors", () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-security-"));
+  const root = path.join(base, "workspace");
+  const outside = path.join(base, "outside");
+  const link = path.join(root, "linked-out");
+  fs.mkdirSync(root);
+  fs.mkdirSync(outside);
+  fs.symlinkSync(outside, link, "junction");
+
+  assert.throws(
+    () => resolveContainedPath(root, "linked-out/new-file.txt"),
+    /Path escapes workspace/
+  );
+
+  fs.rmSync(base, { recursive: true, force: true });
 });

@@ -2,9 +2,11 @@ import WebSocket from "ws";
 import { randomUUID } from "crypto";
 import { log, logError } from "./logger";
 import { loadOrCreateDeviceIdentity, publicKeyRawBase64Url, signPayload } from "./device-identity";
+import { PendingRequestStore } from "./gateway-pending";
+import { EXTENSION_VERSION } from "./version";
 
 const PROTOCOL_VERSION = 3;
-const VERSION = "0.1.0";
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 
 export type InvokeHandler = (
   command: string,
@@ -27,11 +29,8 @@ export interface GatewayClientOptions {
   caps: string[];
   onInvoke: InvokeHandler;
   onStateChange: (state: ConnectionState) => void;
-}
-
-interface Pending {
-  resolve: (value: unknown) => void;
-  reject: (err: Error) => void;
+  clientVersion?: string;
+  requestTimeoutMs?: number;
 }
 
 interface InvokeRequestPayload {
@@ -44,7 +43,7 @@ interface InvokeRequestPayload {
 
 export class GatewayClient {
   private ws: WebSocket | null = null;
-  private pending = new Map<string, Pending>();
+  private pending = new PendingRequestStore();
   private opts: GatewayClientOptions;
   private closed = false;
   private backoffMs = 1000;
@@ -173,7 +172,7 @@ export class GatewayClient {
       client: {
         id: "node-host",
         displayName: this.opts.displayName,
-        version: VERSION,
+        version: this.opts.clientVersion ?? EXTENSION_VERSION,
         platform: process.platform,
         mode: "node",
         instanceId: this.nodeId,
@@ -241,9 +240,11 @@ export class GatewayClient {
       if (!p) return;
 
       // If it's an ack with status accepted, keep waiting
-      if (parsed.payload?.status === "accepted") return;
+      if (parsed.payload?.status === "accepted") {
+        return;
+      }
 
-      this.pending.delete(id);
+      this.takePending(id);
       if (parsed.ok) {
         p.resolve(parsed.payload);
       } else {
@@ -293,10 +294,13 @@ export class GatewayClient {
 
     try {
       const result = await this.opts.onInvoke(command, params, frame.timeoutMs ?? undefined);
+      if (!result.ok) {
+        logError(`invoke ${command} rejected [${result.error.code}]: ${result.error.message}`);
+      }
       await this.sendInvokeResult(frame, result);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      logError(`invoke ${command} failed: ${message}`);
+      logError(`invoke ${command} failed [INTERNAL_ERROR]: ${message}`);
       await this.sendInvokeResult(frame, {
         ok: false,
         error: { code: "INTERNAL_ERROR", message },
@@ -323,6 +327,7 @@ export class GatewayClient {
     }
 
     try {
+      log(`invoke result: ${frame.command} ok=${result.ok}`);
       await this.request("node.invoke.result", params);
     } catch (err) {
       logError(`Failed to send invoke result: ${err}`);
@@ -337,11 +342,25 @@ export class GatewayClient {
       }
       const id = randomUUID();
       const frame = { type: "req", id, method, params };
-      this.pending.set(id, {
-        resolve: (v) => resolve(v as T),
+      const timeoutMs = Math.max(1_000, this.opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS);
+      this.pending.add(
+        id,
+        method,
+        timeoutMs,
+        (value) => resolve(value as T),
         reject,
-      });
-      this.ws.send(JSON.stringify(frame));
+        (timedOutMethod, durationMs) => {
+          logError(`Gateway request timed out: ${timedOutMethod} (${durationMs}ms)`);
+        }
+      );
+      try {
+        this.ws.send(JSON.stringify(frame));
+      } catch (err) {
+        const pending = this.takePending(id);
+        if (pending) {
+          pending.reject(err instanceof Error ? err : new Error(String(err)));
+        }
+      }
     });
   }
 
@@ -354,9 +373,10 @@ export class GatewayClient {
   }
 
   private flushPending(err: Error): void {
-    for (const [, p] of this.pending) {
-      p.reject(err);
-    }
-    this.pending.clear();
+    this.pending.clear(err);
+  }
+
+  private takePending(id: string) {
+    return this.pending.take(id);
   }
 }

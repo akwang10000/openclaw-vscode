@@ -6,6 +6,7 @@ import {
   evaluateMutationPolicy,
   needsWindowsBatchBridge,
   parseCommandString,
+  resolveContainedPath,
   resolveExecutablePath,
   validateCliPath,
 } from "./security-core";
@@ -26,38 +27,19 @@ export function resolveWorkspacePath(relativePath: string): vscode.Uri {
     throw new Error("No workspace folder open");
   }
 
-  const rootUri = workspaceFolders[0].uri;
-  const rootPath = rootUri.fsPath;
-
-  // Reject absolute paths
-  if (path.isAbsolute(relativePath)) {
-    throw new Error(`Absolute paths not allowed: ${relativePath}`);
-  }
-
-  // Resolve and check containment
-  const resolved = path.resolve(rootPath, relativePath);
-  const normalizedRoot = path.resolve(rootPath) + path.sep;
-  const normalizedResolved = path.resolve(resolved);
-
-  // Allow exact root match or must be inside root
-  if (normalizedResolved !== path.resolve(rootPath) &&
-      !normalizedResolved.startsWith(normalizedRoot)) {
-    throw new Error(`Path escapes workspace: ${relativePath}`);
-  }
-
-  return vscode.Uri.file(resolved);
+  const rootPath = workspaceFolders[0].uri.fsPath;
+  const resolved = resolveContainedPath(rootPath, relativePath);
+  return vscode.Uri.file(resolved.canonicalPath);
 }
 
 export function resolveWorkspaceCwd(relativePath?: string): string {
-  if (!relativePath) {
-    const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (!workspaceFolders || workspaceFolders.length === 0) {
-      throw new Error("No workspace folder open");
-    }
-    return workspaceFolders[0].uri.fsPath;
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+  if (!workspaceFolders || workspaceFolders.length === 0) {
+    throw new Error("No workspace folder open");
   }
-
-  return resolveWorkspacePath(relativePath).fsPath;
+  const rootPath = workspaceFolders[0].uri.fsPath;
+  const resolved = resolveContainedPath(rootPath, relativePath ?? ".");
+  return resolved.canonicalPath;
 }
 
 /**

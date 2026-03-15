@@ -83,7 +83,7 @@ Delegate coding tasks through three modes:
 
 ### From VSIX (Current)
 
-Download the latest `.vsix` from [Releases](https://github.com/xiaoyaner-home/openclaw-vscode/releases), then:
+Download the latest `.vsix` from [Releases](https://github.com/akwang10000/openclaw-vscode/releases), then:
 
 ```bash
 # VS Code
@@ -251,6 +251,13 @@ When terminal is enabled, only whitelisted executable names are allowed. Shell c
 "openclaw.terminal.allowlist": ["git", "npm", "pnpm", "node"]
 ```
 
+### Recent Security Hardening
+Recent releases tightened several high-risk edges so the extension behavior now matches its security model more closely:
+- Terminal execution now parses commands safely, rejects shell control operators, and runs with `shell: false`
+- Working-directory parameters such as `cwd` must stay inside the workspace and can no longer escape via relative traversal
+- `openclaw.readOnly` and `openclaw.confirmWrites` now apply across all mutating commands, including git operations, formatting, rename/code actions, terminal execution, and Agent write mode
+- Cursor Agent CLI integration now validates `agent.cliPath` and avoids shell-based command construction for version checks, auth checks, and model listing
+
 ### Device Identity
 Each extension instance generates a unique Ed25519 keypair (stored at `~/.openclaw-vscode/device.json`). The Gateway must approve each device before it can execute commands.
 
@@ -261,7 +268,7 @@ The Gateway can further restrict which commands this node is allowed to execute 
 
 ```bash
 # Clone
-git clone https://github.com/xiaoyaner-home/openclaw-vscode.git
+git clone https://github.com/akwang10000/openclaw-vscode.git
 cd openclaw-vscode
 
 # Install dependencies

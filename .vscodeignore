@@ -1,7 +1,9 @@
+.git/**
+.github/**
+.npm-cache/**
 .vscode/**
 src/**
+test/**
 node_modules/**
 tsconfig.json
-DESIGN.md
-.gitignore
-**/*.map
+package-lock.json

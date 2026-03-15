@@ -25,3 +25,4 @@ coverage/
 *.tmp
 *.bak
 .npm-cache/
+*.vsix

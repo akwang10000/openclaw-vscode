@@ -4,6 +4,10 @@
   "description": "Secure workspace bridge between OpenClaw Gateway and VS Code for file operations, search, and diagnostics via the VS Code API sandbox.",
   "version": "0.2.0",
   "publisher": "xiaoyaner-home",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/akwang10000/openclaw-vscode.git"
+  },
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"

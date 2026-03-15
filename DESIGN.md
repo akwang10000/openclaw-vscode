@@ -33,6 +33,7 @@ Core components:
 - `src/agent-tasks/*`: Codex provider, orchestrator, task persistence, and task service wiring
 - `src/activity-store.ts`: human-readable operation summaries and recent activity state
 - `src/activity-panel.ts`, `src/settings-panel.ts`, `src/setup-wizard.ts`: webview surfaces
+- `NATURAL_LANGUAGE_CALLING.md` and `NATURAL_LANGUAGE_CALLING.zh-CN.md`: prompt-contract layer for conversation-first usage
 
 ## Supported Commands
 
@@ -130,6 +131,15 @@ The activity panel shows:
 - background Codex task state, including waiting-for-decision snapshots
 
 Intent strings are generated from the actual command parameter schema, not guessed field names.
+
+### Natural-language contract
+
+The repository now also carries a documentation-level natural-language contract:
+- user-facing requests should be phrased as intent, not command names
+- the assistant should default to read-only behavior for analysis requests
+- broad "give me options" requests should prefer `plan`
+- broad "fix / implement / apply" requests should confirm before entering write mode
+- task protocol details such as `taskId` should stay hidden unless debugging requires them
 
 ### Settings panel
 

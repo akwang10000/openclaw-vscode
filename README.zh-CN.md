@@ -32,6 +32,9 @@
 - 终端默认关闭
 - 会修改内容的操作受 `openclaw.readOnly` 和 `openclaw.confirmWrites` 约束
 
+如果你更希望像聊天一样使用 OpenClaw，而不是自己记底层命令，请看：
+- [自然语言调用指南](NATURAL_LANGUAGE_CALLING.zh-CN.md)
+
 ## 当前能力
 
 已实现的命令族：
@@ -109,6 +112,20 @@ vscode.workspace.info
   "folders": ["H:\\workspace\\openclaw-vscode"]
 }
 ```
+
+### 如果你更想用自然语言
+
+你可以把 OpenClaw 当成 IDE 助手来直接对话，而不是自己记命令名。
+
+例如：
+- “读一下 README，告诉我怎么安装这个项目。”
+- “分析下一步最值得做的改动，但先不要修改代码。”
+- “继续刚才那个任务，按推荐方案继续。”
+
+推荐行为：
+- 读与查询默认保持只读
+- 规划类请求默认走 Codex task 的 `plan` 流程
+- 修改类请求在真正执行前应先确认
 
 ### 首次使用常见问题
 

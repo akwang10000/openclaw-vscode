@@ -32,6 +32,9 @@ The extension is intentionally sandboxed:
 - terminal execution is disabled by default
 - mutating actions respect `openclaw.readOnly` and `openclaw.confirmWrites`
 
+For conversation-first usage, see:
+- [Natural-Language Calling Guide](NATURAL_LANGUAGE_CALLING.md)
+
 ## Current Status
 
 Implemented command families:
@@ -109,6 +112,20 @@ Expected payload shape:
   "folders": ["H:\\workspace\\openclaw-vscode"]
 }
 ```
+
+### If You Prefer Natural Language
+
+You can talk to OpenClaw like an IDE assistant instead of naming raw commands.
+
+Examples:
+- "Read the README and tell me how to install this project."
+- "Analyze the next most valuable change, but do not modify anything yet."
+- "Continue the last task and use the recommended option."
+
+Recommended behavior:
+- read/query requests stay read-only
+- planning requests use the Codex task flow
+- write requests should be confirmed before execution
 
 ### Common First-Run Fixes
 

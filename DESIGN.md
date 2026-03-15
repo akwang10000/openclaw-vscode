@@ -99,7 +99,7 @@ Codex task orchestration is constrained by:
 - `agent.codex.cliPath` validation under the same shell-safe path rules
 - task `mode=agent` still flowing through the shared mutation guard
 - task `cwd` continuing to use workspace containment
-- Codex execution running under explicit `-s/-a` flags rather than interactive local approvals
+- Codex execution running under explicit `-s` sandbox flags rather than interactive local approvals
 
 ### Webview security
 

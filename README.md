@@ -5,85 +5,62 @@
 </p>
 
 <p align="center">
-  <strong>Connect your IDE to OpenClaw Gateway as a Node</strong><br>
-  Let your AI assistant safely read, write, and navigate code through VS Code APIs.
+  <strong>Connect VS Code or Cursor to OpenClaw Gateway as a remote IDE node.</strong><br>
+  OpenClaw can read code, inspect symbols, run safe IDE actions, and delegate resumable Codex tasks through the VS Code API sandbox.
 </p>
 
 <p align="center">
-  <a href="#features">Features</a> •
-  <a href="#installation">Installation</a> •
-  <a href="#quick-start">Quick Start</a> •
-  <a href="#commands">Commands</a> •
-  <a href="#configuration">Configuration</a> •
-  <a href="#security">Security</a> •
-  <a href="README.zh-CN.md">中文文档</a>
+  <a href="README.zh-CN.md">简体中文</a>
 </p>
 
 ---
 
-<p align="center">
-  <img src="assets/demo.gif" alt="Demo" width="640" />
-</p>
+## What This Extension Does
 
-## What is this?
+This extension registers a VS Code node with OpenClaw Gateway and exposes IDE capabilities through `vscode.*` commands.
 
-This extension turns your VS Code or Cursor editor into an [OpenClaw](https://github.com/openclaw/openclaw) **Node** — a remote-controllable endpoint that exposes IDE capabilities through the Node protocol.
+OpenClaw can then:
+- read, write, and edit files inside the workspace
+- inspect definitions, references, hovers, symbols, and diagnostics
+- run git, test, and debug actions through VS Code APIs
+- execute allowlisted terminal commands
+- launch Cursor Agent CLI tasks
+- launch resumable Codex CLI tasks with status, decision, cancel, and result APIs
 
-Your AI assistant (running on OpenClaw Gateway) can then:
-- 📄 Read, write, and edit files in your workspace
-- 🔍 Jump to definitions, find references, get hover info
-- 🌿 Check git status, view diffs, stage and commit
-- 🧪 Discover and run tests
-- 🐛 Launch debuggers, set breakpoints, evaluate expressions
-- 🤖 Delegate tasks to Cursor Agent CLI (plan/agent/ask modes)
+The extension is intentionally sandboxed:
+- file and `cwd` inputs stay inside the workspace
+- terminal execution is disabled by default
+- mutating actions respect `openclaw.readOnly` and `openclaw.confirmWrites`
 
-All operations go through the VS Code Extension API sandbox — **no raw shell access** by default.
+## Current Status
 
-## Features
+Implemented command families:
+- `vscode.file.*`
+- `vscode.dir.list`
+- `vscode.editor.*`
+- `vscode.diagnostics.get`
+- `vscode.workspace.info`
+- `vscode.lang.*`
+- `vscode.code.format`
+- `vscode.git.*`
+- `vscode.test.*`
+- `vscode.debug.*`
+- `vscode.terminal.run`
+- `vscode.agent.*`
+- `vscode.agent.task.*`
 
-### 40+ IDE Commands
-Full coverage of the development workflow:
-
-| Category | Commands |
-|----------|----------|
-| **File Operations** | `read`, `write`, `edit`, `delete`, `list` |
-| **Editor** | `openFiles`, `selections`, `context` (active file + cursor position) |
-| **Language Intelligence** | `definition`, `references`, `hover`, `symbols`, `rename`, `codeActions`, `applyCodeAction`, `format` |
-| **Diagnostics** | `get` (errors/warnings from all open files) |
-| **Git** | `status`, `diff`, `log`, `blame`, `stage`, `unstage`, `commit`, `stash` |
-| **Testing** | `list`, `run`, `results` |
-| **Debug** | `launch`, `stop`, `breakpoint`, `evaluate`, `stackTrace`, `variables`, `status` |
-| **Agent** | `status`, `run`, `setup` (Cursor Agent CLI integration) |
-| **Workspace** | `info` (folders, files, extensions) |
-
-### Activity Panel
-Every operation from your AI assistant appears in a bottom panel with:
-- Human-readable intent descriptions
-- Duration and status tracking
-- Parameter and result details (expandable)
-
-<img src="assets/activity-panel.png" alt="Activity Panel" width="600" />
-
-### Setup Wizard
-Guided 4-step setup:
-1. **Gateway Connection** — host, port, token
-2. **Security** — read-only mode, write confirmation
-3. **Terminal** — enable/disable, command whitelist
-4. **Agent** — Cursor CLI install, login, model selection
-
-<img src="assets/setup-wizard.png" alt="Setup Wizard" width="600" />
-
-### Cursor Agent CLI Integration
-Delegate coding tasks through three modes:
-- **Agent** — full access, reads/writes files
-- **Plan** — analyzes codebase, proposes changes without executing
-- **Ask** — read-only Q&A about the codebase
+Not implemented yet:
+- `vscode.search.text`
+- `vscode.search.files`
 
 ## Installation
 
-### From VSIX (Current)
+### From VSIX
 
-Download the latest `.vsix` from [Releases](https://github.com/akwang10000/openclaw-vscode/releases), then:
+Download the latest `.vsix` from:
+- <https://github.com/akwang10000/openclaw-vscode/releases>
+
+Then install it:
 
 ```bash
 # VS Code
@@ -93,251 +70,320 @@ code --install-extension openclaw-node-vscode-x.y.z.vsix
 cursor --install-extension openclaw-node-vscode-x.y.z.vsix
 ```
 
-### From Marketplace (Coming Soon)
+### Development Install
 
-```
-ext install xiaoyaner-home.openclaw-node-vscode
+```bash
+npm install
+npm run build
+npx vsce package --no-dependencies
+code --install-extension openclaw-node-vscode-0.2.0.vsix --force
 ```
 
 ## Quick Start
 
-1. **Install the extension** (see above)
-2. **Run the Setup Wizard**: `Cmd/Ctrl+Shift+P` → `OpenClaw: Setup Wizard`
-3. **Enter Gateway details**: host, port, and token from your OpenClaw Gateway config
-4. **Approve the device**: When the extension connects for the first time, approve it in your Gateway
-5. **Start using**: Your AI assistant can now invoke commands via `nodes invoke`
+1. Install the extension.
+2. Open `OpenClaw: Setup Wizard` in VS Code.
+3. Enter your Gateway host, port, and token.
+4. Approve the device on the Gateway the first time it connects.
+5. Confirm the node is connected and exposes `vscode.*` commands.
 
-### Test the connection
+Recommended first-run settings:
+- `openclaw.confirmWrites = true`
+- `openclaw.terminal.enabled = false`
+- `openclaw.agent.codex.enabled = true` only after `codex` is available locally
 
-From your OpenClaw session:
+### First Connection Check
+
+From OpenClaw, invoke:
+
+```text
+vscode.workspace.info
 ```
-nodes invoke --node "Your Node Name" --command vscode.workspace.info
+
+Expected payload shape:
+
+```json
+{
+  "name": "openclaw-vscode",
+  "rootPath": "H:\\workspace\\openclaw-vscode",
+  "folders": ["H:\\workspace\\openclaw-vscode"]
+}
 ```
 
-### Common first-run fixes
+### Common First-Run Fixes
 
-- For a local Gateway, use `127.0.0.1:18789` with `openclaw.gatewayTls = false` unless your Gateway is explicitly serving `wss://`.
+- Local Gateway usually means `openclaw.gatewayHost = 127.0.0.1`, `openclaw.gatewayPort = 18789`, and `openclaw.gatewayTls = false`.
 - Copy the token from `gateway.auth.token` in `~/.openclaw/openclaw.json`.
-- If OpenClaw shows `connected: true` and `paired: true` but `commands: []`, check `gateway.nodes.allowCommands` and make sure it contains exact names such as `vscode.workspace.info` and `vscode.file.read`.
-- Run `OpenClaw: Diagnose Connection` in VS Code for a guided local check.
+- If the node shows `connected: true` and `paired: true` but `commands: []`, make sure `gateway.nodes.allowCommands` contains exact command names such as `vscode.workspace.info` and `vscode.file.read`.
+- Run `OpenClaw: Diagnose Connection` inside VS Code for guided local checks.
 
-## Commands
+## Command Families
 
-All commands are invoked through the OpenClaw Node protocol (`node.invoke.request`). Use the full `vscode.*` command name when calling them from OpenClaw, for example `vscode.file.read` or `vscode.workspace.info`.
+Use full command names when invoking through OpenClaw.
 
-### File Operations
-
-| Command | Parameters | Description |
-|---------|-----------|-------------|
-| `file.read` | `path` | Read file contents |
-| `file.write` | `path`, `content` | Write/create a file |
-| `file.edit` | `path`, `edits[]` | Apply precise text edits |
-| `file.delete` | `path` | Delete a file |
-| `file.list` | `path?`, `recursive?`, `pattern?` | List directory contents |
-
-### Editor
+### Files and Workspace
 
 | Command | Parameters | Description |
-|---------|-----------|-------------|
-| `editor.context` | — | Get active file, cursor position, selection |
-| `editor.openFiles` | — | List all open editor tabs |
-| `editor.selections` | — | Get selections from all editors |
+|---------|------------|-------------|
+| `vscode.file.read` | `path`, `offset?`, `limit?` | Read file text by line range |
+| `vscode.file.write` | `path`, `content` | Write or create a file |
+| `vscode.file.edit` | `path`, `edits[]` | Apply targeted text edits |
+| `vscode.file.delete` | `path` | Delete a file |
+| `vscode.dir.list` | `path?`, `recursive?`, `pattern?` | List files or folders |
+| `vscode.workspace.info` | none | Return workspace name and folders |
 
-### Language Intelligence
-
-| Command | Parameters | Description |
-|---------|-----------|-------------|
-| `lang.definition` | `path`, `line`, `character` | Go to definition |
-| `lang.references` | `path`, `line`, `character` | Find all references |
-| `lang.hover` | `path`, `line`, `character` | Get hover information |
-| `lang.symbols` | `path?`, `query?` | Document/workspace symbols |
-| `lang.rename` | `path`, `line`, `character`, `newName` | Rename symbol |
-| `lang.codeActions` | `path`, `startLine`, `endLine` | Get available code actions |
-| `lang.applyCodeAction` | `path`, `startLine`, `endLine`, `title` | Apply a code action |
-| `lang.format` | `path` | Format document |
-
-### Diagnostics
+### Editor and Language
 
 | Command | Parameters | Description |
-|---------|-----------|-------------|
-| `diagnostics.get` | `path?`, `severity?` | Get errors/warnings |
+|---------|------------|-------------|
+| `vscode.editor.active` | none | Active editor path, language, and selections |
+| `vscode.editor.openFiles` | none | Open editor tabs |
+| `vscode.editor.selections` | none | Current selections across editors |
+| `vscode.lang.definition` | `path`, `line`, `character` | Go to definition |
+| `vscode.lang.references` | `path`, `line`, `character` | Find references |
+| `vscode.lang.hover` | `path`, `line`, `character` | Hover info |
+| `vscode.lang.symbols` | `path?`, `query?` | Document or workspace symbols |
+| `vscode.lang.rename` | `path`, `line`, `character`, `newName` | Rename symbol |
+| `vscode.lang.codeActions` | `path`, `startLine`, `endLine` | List code actions |
+| `vscode.lang.applyCodeAction` | `path`, `startLine`, `endLine`, `title` | Apply a code action |
+| `vscode.code.format` | `path` | Format document |
+| `vscode.diagnostics.get` | `path?`, `severity?` | Diagnostics summary |
 
-### Git
-
-| Command | Parameters | Description |
-|---------|-----------|-------------|
-| `git.status` | — | Working tree status |
-| `git.diff` | `path?`, `staged?` | View diffs |
-| `git.log` | `count?`, `path?` | Commit history |
-| `git.blame` | `path` | Line-by-line blame |
-| `git.stage` | `paths[]` | Stage files |
-| `git.unstage` | `paths[]` | Unstage files |
-| `git.commit` | `message` | Create a commit |
-| `git.stash` | `action`, `message?` | Stash operations |
-
-### Testing
+### Git, Test, and Debug
 
 | Command | Parameters | Description |
-|---------|-----------|-------------|
-| `test.list` | — | Discover all tests |
-| `test.run` | `testIds?`, `grep?` | Run tests |
-| `test.results` | — | Get latest test results |
+|---------|------------|-------------|
+| `vscode.git.status` | none | Working tree status |
+| `vscode.git.diff` | `path?`, `staged?` | Git diff |
+| `vscode.git.log` | `count?`, `path?` | Commit log |
+| `vscode.git.blame` | `path` | Git blame |
+| `vscode.git.stage` | `paths[]` | Stage files |
+| `vscode.git.unstage` | `paths[]` | Unstage files |
+| `vscode.git.commit` | `message` | Commit staged changes |
+| `vscode.git.stash` | `action`, `message?` | Stash operations |
+| `vscode.test.list` | none | Discover tests |
+| `vscode.test.run` | `testIds?`, `grep?` | Run tests |
+| `vscode.test.results` | none | Latest test results |
+| `vscode.debug.launch` | `config?` | Start debugging |
+| `vscode.debug.stop` | none | Stop debugging |
+| `vscode.debug.breakpoint` | `path`, `line`, `action?` | Toggle breakpoint |
+| `vscode.debug.evaluate` | `expression`, `frameId?` | Evaluate expression |
+| `vscode.debug.stackTrace` | none | Stack trace |
+| `vscode.debug.variables` | `frameId?` | Variables |
+| `vscode.debug.status` | none | Debug status |
 
-### Debug
+### Terminal and Legacy Agent CLI
 
 | Command | Parameters | Description |
-|---------|-----------|-------------|
-| `debug.launch` | `config?` | Start debug session |
-| `debug.stop` | — | Stop debugging |
-| `debug.breakpoint` | `path`, `line`, `action?` | Toggle breakpoints |
-| `debug.evaluate` | `expression`, `frameId?` | Evaluate in debug context |
-| `debug.stackTrace` | — | Get call stack |
-| `debug.variables` | `frameId?` | Get variables |
-| `debug.status` | — | Debug session info |
-
-### Agent (Cursor CLI)
-
-| Command | Parameters | Description |
-|---------|-----------|-------------|
-| `vscode.agent.status` | — | Check CLI availability |
+|---------|------------|-------------|
+| `vscode.terminal.run` | `command`, `cwd?`, `timeoutMs?` | Run an allowlisted executable with safe parsing |
+| `vscode.agent.status` | none | Check Cursor Agent CLI availability |
 | `vscode.agent.run` | `prompt`, `mode?`, `model?`, `cwd?`, `timeoutMs?` | Run Cursor Agent CLI |
-| `vscode.agent.setup` | — | Open setup wizard |
+| `vscode.agent.setup` | none | Open setup wizard |
 
-### Agent Tasks (Codex CLI)
+## Codex Task Workflow
 
-| Command | Parameters | Description |
-|---------|-----------|-------------|
-| `vscode.agent.task.start` | `provider`, `prompt`, `mode?`, `cwd?`, `timeoutMs?`, `metadata?` | Start a resumable Codex task |
-| `vscode.agent.task.status` | `taskId` | Get the current task snapshot |
-| `vscode.agent.task.list` | `status?`, `limit?` | List recent Codex task snapshots |
-| `vscode.agent.task.respond` | `taskId`, `choice`, `notes?` | Continue a waiting plan task after a decision |
-| `vscode.agent.task.cancel` | `taskId` | Cancel a running or queued task |
-| `vscode.agent.task.result` | `taskId` | Get final output, error, or pending decision |
+The new task interface is for resumable Codex CLI runs.
 
-### Workspace
+### Available Commands
 
 | Command | Parameters | Description |
-|---------|-----------|-------------|
-| `workspace.info` | — | Workspace folders, file count, extensions |
+|---------|------------|-------------|
+| `vscode.agent.task.start` | `provider`, `prompt`, `mode?`, `cwd?`, `timeoutMs?`, `metadata?` | Start a Codex task |
+| `vscode.agent.task.status` | `taskId` | Return the current task snapshot |
+| `vscode.agent.task.list` | `status?`, `limit?` | List recent tasks |
+| `vscode.agent.task.respond` | `taskId`, `choice`, `notes?` | Continue a waiting plan task |
+| `vscode.agent.task.cancel` | `taskId` | Cancel a queued or running task |
+| `vscode.agent.task.result` | `taskId` | Return final output, error, or pending decision |
+
+### Ask Mode Example
+
+Start:
+
+```json
+{
+  "provider": "codex",
+  "prompt": "Reply with exactly the words OPENCLAW TEST.",
+  "mode": "ask",
+  "cwd": "."
+}
+```
+
+Then poll:
+- `vscode.agent.task.status`
+- `vscode.agent.task.result`
+
+### Plan Mode Example
+
+1. Start the task:
+
+```json
+{
+  "provider": "codex",
+  "prompt": "Analyze this repository and give me two implementation options.",
+  "mode": "plan",
+  "cwd": "."
+}
+```
+
+2. Poll `vscode.agent.task.status` until:
+
+```json
+{
+  "status": "waiting_decision",
+  "decisionRequest": {
+    "question": "What should the next implementation focus be for this repository?",
+    "options": [
+      { "id": "unify-agent-providers", "label": "..." },
+      { "id": "add-search-commands", "label": "..." }
+    ],
+    "recommendedOption": "unify-agent-providers",
+    "contextSummary": "..."
+  }
+}
+```
+
+3. Continue with:
+
+```json
+{
+  "taskId": "your-task-id",
+  "choice": "unify-agent-providers",
+  "notes": "Use the recommended option and continue."
+}
+```
+
+4. Poll `status` again, then call `vscode.agent.task.result`.
+
+Notes:
+- only `provider = "codex"` is supported in v1
+- `mode = "agent"` is treated as mutating and respects `readOnly` / `confirmWrites`
+- `cwd` must remain inside the active workspace
 
 ## Configuration
 
-All settings are under `openclaw.*` in VS Code settings, or use the Settings panel (`Cmd/Ctrl+Shift+P` → `OpenClaw: Settings`).
+All extension settings live under `openclaw.*`.
 
 ### Connection
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `openclaw.gatewayHost` | `""` | Gateway hostname or IP |
-| `openclaw.gatewayPort` | `18789` | Gateway WebSocket port |
-| `openclaw.gatewayToken` | `""` | Authentication token |
-| `openclaw.gatewayTls` | `false` | Use wss:// instead of ws://. Leave this off for most local 127.0.0.1 Gateways |
-| `openclaw.autoConnect` | `true` | Connect on startup |
-| `openclaw.displayName` | `""` | Node display name (shown in `nodes status`) |
+| `openclaw.gatewayHost` | `"127.0.0.1"` | Gateway host |
+| `openclaw.gatewayPort` | `18789` | Gateway port |
+| `openclaw.gatewayToken` | `""` | Gateway auth token |
+| `openclaw.gatewayTls` | `false` | Use `wss://` instead of `ws://` |
+| `openclaw.autoConnect` | `false` | Auto-connect on startup |
+| `openclaw.displayName` | `"VS Code"` | Node display name |
 
 ### Security
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `openclaw.readOnly` | `false` | Block all mutating commands exposed by the extension |
-| `openclaw.confirmWrites` | `false` | Prompt before mutating commands |
-| `openclaw.terminal.enabled` | `false` | Allow terminal commands |
-| `openclaw.terminal.allowlist` | `["git","npm","pnpm","npx","node","tsc"]` | Whitelisted terminal executables by basename |
-| `openclaw.commandTimeout` | `90` | Command timeout in seconds |
+| `openclaw.readOnly` | `false` | Block mutating commands |
+| `openclaw.confirmWrites` | `false` | Confirm mutating commands |
+| `openclaw.terminal.enabled` | `false` | Allow terminal runs |
+| `openclaw.terminal.allowlist` | `["git","npm","pnpm","npx","node","tsc"]` | Allowed executable basenames |
+| `openclaw.commandTimeout` | `90` | Default command timeout in seconds |
 
-### Agent
+### Cursor Agent CLI
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `openclaw.agent.enabled` | `false` | Enable Cursor Agent CLI |
-| `openclaw.agent.cliPath` | `"agent"` | Path to CLI binary |
-| `openclaw.agent.defaultMode` | `"agent"` | Default mode (agent/plan/ask) |
-| `openclaw.agent.defaultModel` | `""` | Default model (empty = auto) |
-| `openclaw.agent.timeoutMs` | `300000` | Agent task timeout |
+| `openclaw.agent.enabled` | `false` | Enable Cursor Agent CLI integration |
+| `openclaw.agent.cliPath` | `"agent"` | Cursor Agent CLI path |
+| `openclaw.agent.defaultMode` | `"agent"` | Default mode |
+| `openclaw.agent.defaultModel` | `""` | Default model |
+| `openclaw.agent.timeoutMs` | `300000` | Timeout in milliseconds |
 
-| `openclaw.agent.codex.enabled` | `false` | Enable Codex CLI task orchestration |
-| `openclaw.agent.codex.cliPath` | `"codex"` | Path to Codex CLI binary |
-| `openclaw.agent.taskHistoryLimit` | `50` | Number of completed agent task records kept in global storage |
+### Codex Tasks
 
-## Security
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `openclaw.agent.codex.enabled` | `false` | Enable Codex task orchestration |
+| `openclaw.agent.codex.cliPath` | `"codex"` | Codex CLI path |
+| `openclaw.agent.taskHistoryLimit` | `50` | Completed task snapshots to keep |
 
-### Sandbox Model
-All file operations go through the VS Code Extension API — not direct filesystem access. This provides:
-- **Path traversal prevention**: Operations restricted to workspace directories
-- **No raw shell access**: Terminal commands disabled by default
-- **Write protection**: Optional read-only mode and confirmation prompts across mutating commands
+## Security Notes
 
-### Terminal Whitelist
-When terminal is enabled, only whitelisted executable names are allowed. Shell chaining and redirection are rejected:
-```json
-"openclaw.terminal.allowlist": ["git", "npm", "pnpm", "node"]
-```
+### Workspace Containment
 
-### Troubleshooting Empty Commands
-If OpenClaw shows the VS Code node as connected and paired but the command list is empty:
-- Run `OpenClaw: Diagnose Connection` from the command palette.
-- Check `gateway.nodes.allowCommands` in `~/.openclaw/openclaw.json`.
-- Use exact command names such as `vscode.workspace.info`, not legacy names like `workspace.info`.
+All workspace-relative `path` and `cwd` inputs go through canonical containment checks:
+- absolute paths are rejected
+- `..` traversal outside the workspace is rejected
+- symlink and junction escapes are rejected
 
-### Recent Security Hardening
-Recent releases tightened several high-risk edges so the extension behavior now matches its security model more closely:
-- Terminal execution now parses commands safely, rejects shell control operators, and runs with `shell: false`
-- Working-directory parameters such as `cwd` must stay inside the canonical workspace and can no longer escape via relative traversal or symlink/junction indirection
-- `openclaw.readOnly` and `openclaw.confirmWrites` now apply across all mutating commands, including git operations, formatting, rename/code actions, terminal execution, and Agent write mode
-- Cursor Agent CLI integration now validates `agent.cliPath` and avoids shell-based command construction for version checks, auth checks, and model listing
-- Gateway-originated protocol requests now have explicit timeout cleanup instead of waiting indefinitely on stuck pending operations
+### Mutation Policy
+
+`openclaw.readOnly` and `openclaw.confirmWrites` now cover:
+- file writes, edits, and deletes
+- rename, format, and apply-code-action flows
+- git mutations
+- terminal execution
+- write-capable agent runs
+
+### Terminal Hardening
+
+`vscode.terminal.run` now:
+- parses commands before execution
+- rejects shell chaining, pipes, redirection, and substitution
+- runs with `shell: false`
+- allowlists executables by basename
 
 ### Device Identity
-Each extension instance generates a unique Ed25519 keypair (stored at `~/.openclaw-vscode/device.json`). The Gateway must approve each device before it can execute commands.
 
-### Gateway-Level Controls
-The Gateway can further restrict which commands this node is allowed to execute via `gateway.nodes.allowCommands` configuration.
+Each extension instance creates an Ed25519 identity at:
+
+```text
+~/.openclaw-vscode/device.json
+```
+
+The Gateway must approve that device before it can execute commands.
+
+## Troubleshooting
+
+### Connected But No Commands
+
+Check `gateway.nodes.allowCommands` in `~/.openclaw/openclaw.json`.
+Use exact command names such as:
+- `vscode.workspace.info`
+- `vscode.file.read`
+- `vscode.agent.task.start`
+
+### Local Gateway TLS Error
+
+If you see `WRONG_VERSION_NUMBER`, you likely enabled TLS against a local non-TLS Gateway.
+Set:
+
+```json
+{
+  "openclaw.gatewayHost": "127.0.0.1",
+  "openclaw.gatewayPort": 18789,
+  "openclaw.gatewayTls": false
+}
+```
+
+### Codex Tasks Do Not Start
+
+Check:
+- `openclaw.agent.codex.enabled = true`
+- `openclaw.agent.codex.cliPath` points to a working `codex` binary
+- `cwd` stays inside the workspace
 
 ## Development
 
 ```bash
-# Clone
 git clone https://github.com/akwang10000/openclaw-vscode.git
 cd openclaw-vscode
-
-# Install dependencies
 npm install
-
-# Build
+npm run test
+npm run lint
 npm run build
-
-# Package VSIX
 npx vsce package --no-dependencies
-
-# Watch mode (for development)
-npm run watch
 ```
 
-## Architecture
+## References
 
-```
-Extension Host (VS Code/Cursor)
-  ├── GatewayClient (WebSocket)     → OpenClaw Gateway
-  ├── CommandRegistry (40+ commands) → VS Code Extension API
-  ├── ActivityPanel (operation log)  → Bottom panel view
-  ├── SecurityGuard (path/cmd validation)
-  └── AgentBridge (Cursor CLI)      → Cursor Agent CLI
-```
-
-The extension connects to the Gateway as a Node using the standard OpenClaw Node protocol (WebSocket + JSON messages). Commands are registered at startup and listed in `nodes status`. The Gateway dispatches `node.invoke.request` messages, and the extension executes them through the VS Code API.
-
-See [DESIGN.md](DESIGN.md) for detailed architecture documentation.
-
-## Contributing
-
-Contributions welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-## License
-
-MIT — see [LICENSE](LICENSE)
-
-## Links
-
-- [OpenClaw](https://github.com/openclaw/openclaw) — The AI assistant framework
-- [OpenClaw Docs](https://docs.openclaw.ai) — Documentation
-- [OpenClaw Discord](https://discord.com/invite/clawd) — Community
+- [OpenClaw](https://github.com/openclaw/openclaw)
+- [OpenClaw Docs](https://docs.openclaw.ai)
+- [Design Notes](DESIGN.md)
+- [License](LICENSE)

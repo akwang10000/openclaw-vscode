@@ -15,6 +15,27 @@ export interface NodeCommandSnapshot {
   commands?: string[];
 }
 
+export function explainNodeStateQueryError(error: unknown): DiagnosisFinding {
+  const detail = error instanceof Error ? error.message : String(error);
+  const normalized = detail.toLowerCase();
+
+  if (normalized.includes("unauthorized role: node")) {
+    return {
+      level: "info",
+      code: "NODE_LIST_RESTRICTED_FOR_NODE_ROLE",
+      message: "Live node enumeration is not available from the VS Code node role.",
+      detail: "The extension is connected, but Gateway only allows node.list from a higher-privilege client. Verify live node exposure from the OpenClaw app or CLI if needed.",
+    };
+  }
+
+  return {
+    level: "warn",
+    code: "NODE_LIST_UNAVAILABLE",
+    message: "Could not query Gateway for live node command state.",
+    detail,
+  };
+}
+
 function pushFinding(
   findings: DiagnosisFinding[],
   level: DiagnosisLevel,
@@ -170,4 +191,3 @@ export function analyzeNodeCommandExposure(
   );
   return findings;
 }
-

@@ -6,7 +6,12 @@ import * as vscode from "vscode";
 import { getRegisteredCommands } from "./commands/registry";
 import { getConfig } from "./config";
 import type { DiagnosisFinding, NodeCommandSnapshot } from "./diagnostics-core";
-import { analyzeGatewayAllowCommands, analyzeNodeCommandExposure, isLoopbackHost } from "./diagnostics-core";
+import {
+  analyzeGatewayAllowCommands,
+  analyzeNodeCommandExposure,
+  explainNodeStateQueryError,
+  isLoopbackHost,
+} from "./diagnostics-core";
 import { loadOrCreateDeviceIdentity } from "./device-identity";
 import type { GatewayClient } from "./gateway-client";
 import { getOutputChannel } from "./logger";
@@ -204,13 +209,7 @@ export async function runConnectionDiagnosis(client: GatewayClient | null): Prom
         : null;
       findings.push(...analyzeNodeCommandExposure(matchingNode, registeredCommands));
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      findings.push({
-        level: "warn",
-        code: "NODE_LIST_UNAVAILABLE",
-        message: "Could not query Gateway for live node command state.",
-        detail: message,
-      });
+      findings.push(explainNodeStateQueryError(err));
     }
   }
 

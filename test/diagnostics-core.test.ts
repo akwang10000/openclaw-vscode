@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const {
   analyzeGatewayAllowCommands,
   analyzeNodeCommandExposure,
+  explainNodeStateQueryError,
   isLoopbackHost,
 } = require("../src/diagnostics-core.ts");
 
@@ -51,4 +52,11 @@ test("analyzeNodeCommandExposure accepts complete command exposure", () => {
   );
   assert.equal(findings.at(-1).code, "NODE_COMMANDS_READY");
   assert.equal(findings.at(-1).level, "ok");
+});
+
+test("explainNodeStateQueryError downgrades node-role node.list rejections to info", () => {
+  const finding = explainNodeStateQueryError(new Error("unauthorized role: node"));
+  assert.equal(finding.code, "NODE_LIST_RESTRICTED_FOR_NODE_ROLE");
+  assert.equal(finding.level, "info");
+  assert.match(finding.detail, /higher-privilege client/i);
 });

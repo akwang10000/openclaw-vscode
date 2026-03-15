@@ -9,6 +9,7 @@ import { ActivityViewProvider } from "./activity-panel";
 import { agentSetup } from "./commands/agent";
 import { showSetupWizard } from "./setup-wizard";
 import { runConnectionDiagnosis } from "./connection-diagnostics";
+import { disposeAgentOrchestrator, initializeAgentOrchestrator } from "./agent-tasks/service";
 
 let client: GatewayClient | null = null;
 
@@ -32,6 +33,7 @@ function createClient(): GatewayClient {
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   log("OpenClaw extension activating...");
+  await initializeAgentOrchestrator(context, () => client);
 
   // Status bar
   const statusBar = createStatusBar();
@@ -135,6 +137,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 export function deactivate(): void {
   client?.stop();
   client = null;
+  disposeAgentOrchestrator();
   disposeStatusBar();
   disposeLogger();
 }

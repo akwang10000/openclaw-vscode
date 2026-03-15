@@ -203,6 +203,17 @@ All commands are invoked through the OpenClaw Node protocol (`node.invoke.reques
 | `vscode.agent.run` | `prompt`, `mode?`, `model?`, `cwd?`, `timeoutMs?` | Run Cursor Agent CLI |
 | `vscode.agent.setup` | — | Open setup wizard |
 
+### Agent Tasks (Codex CLI)
+
+| Command | Parameters | Description |
+|---------|-----------|-------------|
+| `vscode.agent.task.start` | `provider`, `prompt`, `mode?`, `cwd?`, `timeoutMs?`, `metadata?` | Start a resumable Codex task |
+| `vscode.agent.task.status` | `taskId` | Get the current task snapshot |
+| `vscode.agent.task.list` | `status?`, `limit?` | List recent Codex task snapshots |
+| `vscode.agent.task.respond` | `taskId`, `choice`, `notes?` | Continue a waiting plan task after a decision |
+| `vscode.agent.task.cancel` | `taskId` | Cancel a running or queued task |
+| `vscode.agent.task.result` | `taskId` | Get final output, error, or pending decision |
+
 ### Workspace
 
 | Command | Parameters | Description |
@@ -243,6 +254,10 @@ All settings are under `openclaw.*` in VS Code settings, or use the Settings pan
 | `openclaw.agent.defaultMode` | `"agent"` | Default mode (agent/plan/ask) |
 | `openclaw.agent.defaultModel` | `""` | Default model (empty = auto) |
 | `openclaw.agent.timeoutMs` | `300000` | Agent task timeout |
+
+| `openclaw.agent.codex.enabled` | `false` | Enable Codex CLI task orchestration |
+| `openclaw.agent.codex.cliPath` | `"codex"` | Path to Codex CLI binary |
+| `openclaw.agent.taskHistoryLimit` | `50` | Number of completed agent task records kept in global storage |
 
 ## Security
 

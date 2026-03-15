@@ -61,6 +61,7 @@ function getHtml(cspSource: string, nonce: string): string {
     --ok: #4ec9b0;
     --err: #f14c4c;
     --running: #dcdcaa;
+    --waiting: #d7ba7d;
     --muted: var(--vscode-descriptionForeground, #888);
     --accent: var(--vscode-textLink-foreground, #3794ff);
   }
@@ -90,6 +91,7 @@ function getHtml(cspSource: string, nonce: string): string {
   .card.s-ok { border-left: 3px solid var(--ok); }
   .card.s-error { border-left: 3px solid var(--err); }
   .card.s-running { border-left: 3px solid var(--running); }
+  .card.s-waiting { border-left: 3px solid var(--waiting); }
   .card-main { padding: 6px 8px; }
   .intent { font-size: 12px; font-weight: 500; line-height: 1.4; }
   .meta { display: flex; gap: 6px; align-items: center; margin-top: 3px; font-size: 10px; color: var(--muted); }
@@ -98,6 +100,7 @@ function getHtml(cspSource: string, nonce: string): string {
   .badge-ok { color: var(--ok); }
   .badge-err { color: var(--err); }
   .badge-running { color: var(--running); }
+  .badge-waiting { color: var(--waiting); }
   .details { display: none; padding: 0 8px 6px; border-top: 1px solid var(--border); margin-top: 4px; padding-top: 6px; }
   .card.expanded .details { display: block; }
   .dlabel { font-size: 10px; color: var(--muted); margin-bottom: 2px; }
@@ -125,7 +128,7 @@ function getHtml(cspSource: string, nonce: string): string {
   let activities = [];
   let stats = {};
   let filter = "all";
-  const CATS = ["all","File","Editor","Language","Git","Terminal","Test","Debug","Diagnostics","Workspace"];
+  const CATS = ["all","File","Editor","Language","Git","Terminal","Test","Debug","Diagnostics","Workspace","Agent Task"];
 
   function fmt(ts) { return new Date(ts).toLocaleTimeString("en-GB",{hour12:false,hour:"2-digit",minute:"2-digit",second:"2-digit"}); }
   function dur(ms) { if(ms==null) return ""; return ms < 1000 ? ms + "ms" : (ms / 1000).toFixed(1) + "s"; }
@@ -162,7 +165,13 @@ function getHtml(cspSource: string, nonce: string): string {
     }
 
     el.innerHTML = list.map(a => {
-      const icon = a.status === "ok" ? "OK" : a.status === "error" ? "ERR" : '<span class="spinner"></span>';
+      const icon = a.status === "ok"
+        ? "OK"
+        : a.status === "error"
+          ? "ERR"
+          : a.status === "waiting"
+            ? "WAIT"
+            : '<span class="spinner"></span>';
       return '<div class="card s-' + a.status + '" data-id="' + a.id + '">' +
         '<div class="card-main">' +
           '<div class="intent">' + esc(a.intent) + '</div>' +

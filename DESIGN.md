@@ -20,6 +20,7 @@ VS Code / Cursor extension host
   -> Security helpers
   -> Activity store + webviews
   -> Cursor Agent CLI bridge
+  -> AgentOrchestrator + Codex task provider
 VS Code APIs / workspace
 ```
 
@@ -28,7 +29,8 @@ Core components:
 - `src/gateway-client.ts`: WebSocket transport, connect handshake, invoke handling, request lifecycle
 - `src/commands/registry.ts`: command dispatch, activity tracking, per-command timeout enforcement
 - `src/security-core.ts` and `src/security.ts`: command parsing, mutation policy, CLI path validation, workspace containment
-- `src/commands/*`: file, language, git, test, debug, terminal, and agent handlers
+- `src/commands/*`: file, language, git, test, debug, terminal, agent, and agent task handlers
+- `src/agent-tasks/*`: Codex provider, orchestrator, task persistence, and task service wiring
 - `src/activity-store.ts`: human-readable operation summaries and recent activity state
 - `src/activity-panel.ts`, `src/settings-panel.ts`, `src/setup-wizard.ts`: webview surfaces
 
@@ -47,6 +49,7 @@ The extension currently exposes these command groups:
 - `vscode.debug.*`: launch, stop, breakpoint, evaluate, stackTrace, variables, status
 - `vscode.terminal.run`
 - `vscode.agent.*`: status, run, setup
+- `vscode.agent.task.*`: start, status, list, respond, cancel, result
 
 Not implemented:
 - `vscode.search.text`
@@ -92,6 +95,12 @@ Cursor Agent CLI integration is constrained by:
 - no shell-based command concatenation for detect/list/auth/run flows
 - workspace-contained `cwd`
 
+Codex task orchestration is constrained by:
+- `agent.codex.cliPath` validation under the same shell-safe path rules
+- task `mode=agent` still flowing through the shared mutation guard
+- task `cwd` continuing to use workspace containment
+- Codex execution running under explicit `-s/-a` flags rather than interactive local approvals
+
 ### Webview security
 
 The activity panel, settings panel, and setup wizard now use:
@@ -118,6 +127,7 @@ The activity panel shows:
 - human-readable intent
 - status, duration, timestamp
 - params and result/error details
+- background Codex task state, including waiting-for-decision snapshots
 
 Intent strings are generated from the actual command parameter schema, not guessed field names.
 
@@ -145,6 +155,7 @@ The setup wizard is the guided first-run flow:
 Completed:
 - Gateway node connection and invoke flow
 - file, editor, language, git, test, debug, terminal, and agent command sets
+- Codex task orchestration with resumable task snapshots, remote decisions, and Gateway `node.event` emission
 - activity panel
 - settings panel
 - setup wizard
@@ -174,13 +185,15 @@ The automated tests currently cover:
 - mutation policy matrix
 - canonical workspace containment including symlink escape rejection
 - pending Gateway request timeout cleanup
+- agent task orchestrator state transitions, cancellation, and restart recovery
 - activity intent summaries
 - webview HTML CSP / nonce generation
 
 ## Next Design Focus
 
-After this security-hardening pass, the next likely design targets are:
+After the Codex orchestration pass, the next likely design targets are:
 - broader command-level regression tests
+- migrating Cursor Agent onto the same provider/task framework
 - clearer publish/distribution metadata and marketplace preparation
 - multi-root workspace behavior definition
 - deeper Gateway protocol compatibility validation

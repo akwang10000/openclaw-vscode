@@ -364,6 +364,13 @@ export class GatewayClient {
     });
   }
 
+  emitNodeEvent(event: string, payload?: unknown): Promise<void> {
+    return this.request("node.event", {
+      event,
+      payload,
+    }).then(() => undefined);
+  }
+
   private scheduleReconnect(): void {
     if (this.closed) return;
     const delay = this.backoffMs;

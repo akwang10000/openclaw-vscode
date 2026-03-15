@@ -18,6 +18,9 @@ export interface OpenClawConfig {
   agentDefaultMode: string;
   agentDefaultModel: string;
   agentTimeoutMs: number;
+  agentCodexEnabled: boolean;
+  agentCodexCliPath: string;
+  agentTaskHistoryLimit: number;
 }
 
 export function getConfig(): OpenClawConfig {
@@ -41,5 +44,8 @@ export function getConfig(): OpenClawConfig {
     agentDefaultMode: cfg.get<string>("agent.defaultMode", "agent"),
     agentDefaultModel: cfg.get<string>("agent.defaultModel", ""),
     agentTimeoutMs: cfg.get<number>("agent.timeoutMs", 300000),
+    agentCodexEnabled: cfg.get<boolean>("agent.codex.enabled", false),
+    agentCodexCliPath: cfg.get<string>("agent.codex.cliPath", "codex"),
+    agentTaskHistoryLimit: cfg.get<number>("agent.taskHistoryLimit", 50),
   };
 }

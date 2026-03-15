@@ -1,12 +1,12 @@
 import { EventEmitter } from "events";
 
 export interface Activity {
-  id: number;
+  id: number | string;
   command: string;
   category: string;
   intent: string;
   params: unknown;
-  status: "running" | "ok" | "error";
+  status: "running" | "waiting" | "ok" | "error";
   startedAt: number;
   finishedAt?: number;
   durationMs?: number;
@@ -26,6 +26,7 @@ const CATEGORY_MAP: Record<string, string> = {
   "vscode.terminal": "Terminal",
   "vscode.diagnostics": "Diagnostics",
   "vscode.workspace": "Workspace",
+  "vscode.agent.task": "Agent Task",
 };
 
 function getCategory(command: string): string {
@@ -89,6 +90,12 @@ export function describeIntent(command: string, params: unknown): string {
     case "vscode.agent.run": return `Agent: ${truncStr(String(p.prompt || ""), 50)}`;
     case "vscode.agent.status": return "Agent status";
     case "vscode.agent.setup": return "Agent setup";
+    case "vscode.agent.task.start": return `Start ${String(p.provider || "agent")} task`;
+    case "vscode.agent.task.status": return `Task status ${truncStr(String(p.taskId || ""), 16)}`;
+    case "vscode.agent.task.list": return "List agent tasks";
+    case "vscode.agent.task.respond": return `Respond to ${truncStr(String(p.taskId || ""), 16)}`;
+    case "vscode.agent.task.cancel": return `Cancel ${truncStr(String(p.taskId || ""), 16)}`;
+    case "vscode.agent.task.result": return `Task result ${truncStr(String(p.taskId || ""), 16)}`;
     default: return command.replace("vscode.", "");
   }
 }
@@ -121,6 +128,7 @@ class ActivityStore extends EventEmitter {
   private activities: Activity[] = [];
   private nextId = 1;
   private maxEntries = 200;
+  private taskActivityIds = new Map<string, string>();
 
   start(command: string, params: unknown): number {
     const id = this.nextId++;
@@ -152,6 +160,83 @@ class ActivityStore extends EventEmitter {
     this.emit("change");
   }
 
+  upsertTask(
+    taskId: string,
+    details: {
+      provider: string;
+      status: "queued" | "running" | "waiting_decision" | "completed" | "failed" | "cancelled" | "interrupted";
+      prompt: string;
+      turn: number;
+      latestOutput?: string;
+      latestProgress?: string;
+      decisionRequest?: unknown;
+      resultText?: string;
+      error?: string;
+      updatedAt: number;
+      createdAt: number;
+    }
+  ): void {
+    const id = this.taskActivityIds.get(taskId) ?? `task:${taskId}`;
+    this.taskActivityIds.set(taskId, id);
+    const existing = this.activities.find((entry) => entry.id === id);
+    const mappedStatus =
+      details.status === "completed"
+        ? "ok"
+        : details.status === "failed" || details.status === "cancelled" || details.status === "interrupted"
+          ? "error"
+          : details.status === "waiting_decision"
+            ? "waiting"
+            : "running";
+    const payload = {
+      taskId,
+      provider: details.provider,
+      status: details.status,
+      turn: details.turn,
+      latestProgress: details.latestProgress,
+      latestOutput: details.latestOutput,
+      decisionRequest: details.decisionRequest,
+      resultText: details.resultText,
+    };
+
+    if (existing) {
+      existing.status = mappedStatus;
+      existing.startedAt = details.createdAt;
+      existing.finishedAt =
+        mappedStatus === "running" || mappedStatus === "waiting"
+          ? undefined
+          : details.updatedAt;
+      existing.durationMs = existing.finishedAt ? existing.finishedAt - existing.startedAt : undefined;
+      existing.payload = payload;
+      existing.error = details.error;
+      existing.intent = `${details.provider} task ${truncStr(taskId, 12)}`;
+      existing.params = { prompt: details.prompt, provider: details.provider };
+    } else {
+      this.activities.unshift({
+        id,
+        command: "vscode.agent.task",
+        category: "Agent Task",
+        intent: `${details.provider} task ${truncStr(taskId, 12)}`,
+        params: { prompt: details.prompt, provider: details.provider },
+        status: mappedStatus,
+        startedAt: details.createdAt,
+        finishedAt:
+          mappedStatus === "running" || mappedStatus === "waiting"
+            ? undefined
+            : details.updatedAt,
+        durationMs:
+          mappedStatus === "running" || mappedStatus === "waiting"
+            ? undefined
+            : details.updatedAt - details.createdAt,
+        payload,
+        error: details.error,
+      });
+      if (this.activities.length > this.maxEntries) {
+        this.activities.length = this.maxEntries;
+      }
+    }
+    this.emit("change");
+  }
+
   getAll(): Activity[] {
     return this.activities;
   }
@@ -165,7 +250,7 @@ class ActivityStore extends EventEmitter {
     const total = this.activities.length;
     const ok = this.activities.filter((entry) => entry.status === "ok").length;
     const errors = this.activities.filter((entry) => entry.status === "error").length;
-    const running = this.activities.filter((entry) => entry.status === "running").length;
+    const running = this.activities.filter((entry) => entry.status === "running" || entry.status === "waiting").length;
     return { total, ok, errors, running };
   }
 }

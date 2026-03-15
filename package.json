@@ -128,6 +128,21 @@
           "type": "number",
           "default": 300000,
           "description": "Agent task timeout in milliseconds (default: 5 min)"
+        },
+        "openclaw.agent.codex.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable Codex CLI task orchestration"
+        },
+        "openclaw.agent.codex.cliPath": {
+          "type": "string",
+          "default": "codex",
+          "description": "Path to the Codex CLI binary"
+        },
+        "openclaw.agent.taskHistoryLimit": {
+          "type": "number",
+          "default": 50,
+          "description": "Maximum number of completed agent task records to keep in global storage"
         }
       }
     }

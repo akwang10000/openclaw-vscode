@@ -35,6 +35,14 @@ import {
 } from "./debug";
 import { terminalRun } from "./terminal";
 import { agentRun, agentSetup, agentStatus } from "./agent";
+import {
+  agentTaskCancel,
+  agentTaskList,
+  agentTaskRespond,
+  agentTaskResult,
+  agentTaskStart,
+  agentTaskStatus,
+} from "./agent-task";
 import { log } from "../logger";
 import { activityStore } from "../activity-store";
 import { getConfig } from "../config";
@@ -97,6 +105,12 @@ handlers.set("vscode.terminal.run", (p) => terminalRun(p as Parameters<typeof te
 handlers.set("vscode.agent.run", (p) => agentRun(p as Parameters<typeof agentRun>[0]));
 handlers.set("vscode.agent.setup", () => agentSetup());
 handlers.set("vscode.agent.status", () => agentStatus());
+handlers.set("vscode.agent.task.start", (p) => agentTaskStart(p as Parameters<typeof agentTaskStart>[0]));
+handlers.set("vscode.agent.task.status", (p) => agentTaskStatus(p as Parameters<typeof agentTaskStatus>[0]));
+handlers.set("vscode.agent.task.list", (p) => agentTaskList(p as Parameters<typeof agentTaskList>[0]));
+handlers.set("vscode.agent.task.respond", (p) => agentTaskRespond(p as Parameters<typeof agentTaskRespond>[0]));
+handlers.set("vscode.agent.task.cancel", (p) => agentTaskCancel(p as Parameters<typeof agentTaskCancel>[0]));
+handlers.set("vscode.agent.task.result", (p) => agentTaskResult(p as Parameters<typeof agentTaskResult>[0]));
 
 export function getRegisteredCommands(): string[] {
   return [...handlers.keys()];

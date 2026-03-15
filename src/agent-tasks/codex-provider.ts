@@ -341,10 +341,13 @@ export class CodexTaskProvider implements AgentTaskProvider {
 
     args.push("--json", "--color", "never", "--skip-git-repo-check", "-C", input.cwd);
 
+    // The local Codex CLI version used by this project supports sandbox selection
+    // but not the older "-a/--approval" flag shape. Keep the args compatible with
+    // current exec help output so task launches work on real machines.
     if (input.mode === "agent") {
-      args.push("-s", "workspace-write", "-a", "never");
+      args.push("-s", "workspace-write");
     } else {
-      args.push("-s", "read-only", "-a", "never");
+      args.push("-s", "read-only");
     }
 
     if (input.mode === "plan" && !input.decisionChoice) {

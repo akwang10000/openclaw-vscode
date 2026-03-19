@@ -21,7 +21,17 @@ npx vsce package --no-dependencies  # Package VSIX
 
 - TypeScript strict mode
 - ESBuild for bundling
-- Keep dependencies minimal (VS Code API + tweetnacl for crypto)
+- Keep dependencies minimal and prefer built-in Node.js modules, such as `crypto`, when possible
+
+## Verification
+
+Before opening a PR, run:
+
+```bash
+npm run test
+npm run lint
+npm run build
+```
 
 ## Pull Requests
 

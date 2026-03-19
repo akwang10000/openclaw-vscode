@@ -97,7 +97,7 @@ export async function agentTaskStart(params: unknown): Promise<unknown> {
     prompt,
     mode,
     cwd: cwd ? resolveWorkspaceCwd(cwd) : resolveWorkspaceCwd(),
-    timeoutMs,
+    timeoutMs: timeoutMs ?? cfg.agentTimeoutMs ?? 300_000,
     metadata,
   } satisfies AgentTaskStartInput);
 
@@ -150,4 +150,3 @@ export async function agentTaskResult(params: unknown): Promise<unknown> {
   const orchestrator = getAgentOrchestrator();
   return orchestrator.getTaskResult(readString(input.taskId, "taskId"));
 }
-

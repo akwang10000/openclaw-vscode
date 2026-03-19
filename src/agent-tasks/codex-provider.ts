@@ -5,6 +5,7 @@ import { getConfig } from "../config";
 import { createSpawnCommand, validateCliPath } from "../security";
 import { logError, logWarn } from "../logger";
 import { getEnhancedEnv } from "../commands/agent";
+import { buildCodexExecArgs } from "./codex-cli-args";
 import type {
   AgentDecisionRequest,
   AgentTaskProvider,
@@ -121,12 +122,19 @@ export class CodexTaskProvider implements AgentTaskProvider {
 
     const cliPath = validateCliPath(cfg.agentCodexCliPath || "codex").normalized;
     const prompt = resume ? buildResumePrompt(input) : buildTurnPrompt(input);
-    const args = this.buildArgs(input, prompt, resume);
+    const args = buildCodexExecArgs({
+      cwd: input.cwd,
+      prompt,
+      mode: input.mode,
+      sessionId: resume ? input.sessionId : undefined,
+      outputSchemaPath: input.mode === "plan" && !input.decisionChoice ? this.schemaPath : undefined,
+    });
     const spawnCommand = createSpawnCommand(cliPath, args, getEnhancedEnv());
 
     let latestText = "";
     let sessionId = input.sessionId;
     let cancelled = false;
+    let timedOut = false;
     let settled = false;
     let stderrOutput = "";
     let stdoutBuffer = "";
@@ -164,7 +172,7 @@ export class CodexTaskProvider implements AgentTaskProvider {
 
     const timeoutMs = input.timeoutMs ?? 300_000;
     const timer = setTimeout(() => {
-      cancelled = true;
+      timedOut = true;
       try {
         child.kill("SIGKILL");
       } catch {
@@ -292,6 +300,14 @@ export class CodexTaskProvider implements AgentTaskProvider {
             handleStderrLine(stderrBuffer);
           }
 
+          if (timedOut) {
+            finish({
+              error: `Codex task timed out after ${timeoutMs}ms`,
+              sessionId,
+              finalText: latestText || undefined,
+            });
+            return;
+          }
           if (cancelled) {
             finish({ cancelled: true, sessionId, finalText: latestText || undefined });
             return;
@@ -334,26 +350,4 @@ export class CodexTaskProvider implements AgentTaskProvider {
     return runtimeHandle;
   }
 
-  private buildArgs(input: AgentTaskProviderTurnInput, prompt: string, resume: boolean): string[] {
-    const args = resume && input.sessionId
-      ? ["exec", "resume", input.sessionId, prompt]
-      : ["exec", prompt];
-
-    args.push("--json", "--color", "never", "--skip-git-repo-check", "-C", input.cwd);
-
-    // The local Codex CLI version used by this project supports sandbox selection
-    // but not the older "-a/--approval" flag shape. Keep the args compatible with
-    // current exec help output so task launches work on real machines.
-    if (input.mode === "agent") {
-      args.push("-s", "workspace-write");
-    } else {
-      args.push("-s", "read-only");
-    }
-
-    if (input.mode === "plan" && !input.decisionChoice) {
-      args.push("--output-schema", this.schemaPath);
-    }
-
-    return args;
-  }
 }

@@ -79,7 +79,8 @@ cursor --install-extension openclaw-node-vscode-x.y.z.vsix
 npm install
 npm run build
 npx vsce package --no-dependencies
-code --install-extension openclaw-node-vscode-0.2.0.vsix --force
+code --install-extension openclaw-node-vscode-<version>.vsix --force
+cursor --install-extension openclaw-node-vscode-<version>.vsix --force
 ```
 
 ## 快速开始
@@ -134,6 +135,17 @@ vscode.workspace.info
 - 如果节点状态显示 `connected: true`、`paired: true`，但 `commands: []`，检查 `gateway.nodes.allowCommands`，必须写完整命令名，比如 `vscode.workspace.info`、`vscode.file.read`
 - 可以直接在 VS Code 里运行 `OpenClaw: Diagnose Connection`
 
+### VS Code 里的本地入口
+
+在 VS Code 或 Cursor 里，最常用的本地入口有这些：
+- `OpenClaw: Setup Wizard`：首次配置和连接向导
+- `OpenClaw: Settings`：完整设置面板，包括终端白名单和 agent 默认项
+- `OpenClaw: Diagnose Connection`：检查 token、host 和本地配置
+- `OpenClaw: Show Log`：打开扩展输出日志，适合排查连接或命令处理失败
+- `OpenClaw: Agent Setup`：检查 Cursor Agent CLI 是否安装和完成认证
+- 状态栏里的 `OpenClaw` 项：快速连接或断开
+- 底部面板里的 `OpenClaw` Activity 视图：查看最近操作、参数、结果，以及等待决策的任务
+
 ## 命令分类
 
 通过 OpenClaw 调用时，请使用完整命令名。
@@ -144,8 +156,8 @@ vscode.workspace.info
 |------|------|------|
 | `vscode.file.read` | `path`, `offset?`, `limit?` | 按行读取文件 |
 | `vscode.file.write` | `path`, `content` | 写入或创建文件 |
-| `vscode.file.edit` | `path`, `edits[]` | 精准文本编辑 |
-| `vscode.file.delete` | `path` | 删除文件 |
+| `vscode.file.edit` | `path`, `oldText`, `newText` | 将文件中所有匹配的 `oldText` 替换为 `newText` |
+| `vscode.file.delete` | `path`, `useTrash?` | 删除文件；默认移到回收站 |
 | `vscode.dir.list` | `path?`, `recursive?`, `pattern?` | 列目录 |
 | `vscode.workspace.info` | 无 | 返回工作区名称和文件夹列表 |
 
@@ -171,16 +183,16 @@ vscode.workspace.info
 | 命令 | 参数 | 说明 |
 |------|------|------|
 | `vscode.git.status` | 无 | 工作区 Git 状态 |
-| `vscode.git.diff` | `path?`, `staged?` | 查看 diff |
-| `vscode.git.log` | `count?`, `path?` | 提交历史 |
-| `vscode.git.blame` | `path` | blame 信息 |
+| `vscode.git.diff` | `path?`, `staged?`, `ref?` | 查看 diff |
+| `vscode.git.log` | `limit?`, `path?`, `oneline?` | 提交历史 |
+| `vscode.git.blame` | `path`, `startLine?`, `endLine?` | blame 信息 |
 | `vscode.git.stage` | `paths[]` | stage 文件 |
 | `vscode.git.unstage` | `paths[]` | unstage 文件 |
-| `vscode.git.commit` | `message` | 提交 |
+| `vscode.git.commit` | `message`, `amend?` | 提交 |
 | `vscode.git.stash` | `action`, `message?` | stash 操作 |
-| `vscode.test.list` | 无 | 枚举测试 |
-| `vscode.test.run` | `testIds?`, `grep?` | 运行测试 |
-| `vscode.test.results` | 无 | 最近测试结果 |
+| `vscode.test.list` | `path?` | 报告 VS Code 测试命令是否可用；不会真正枚举测试用例 |
+| `vscode.test.run` | `path?`, `debug?` | 触发运行全部、运行当前文件或调试当前文件 |
+| `vscode.test.results` | 无 | 基于测试相关文件诊断信息的摘要，不是原始 VS Code 测试结果 |
 | `vscode.debug.launch` | `config?` | 启动调试 |
 | `vscode.debug.stop` | 无 | 停止调试 |
 | `vscode.debug.breakpoint` | `path`, `line`, `action?` | 切换断点 |

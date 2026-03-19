@@ -79,7 +79,8 @@ cursor --install-extension openclaw-node-vscode-x.y.z.vsix
 npm install
 npm run build
 npx vsce package --no-dependencies
-code --install-extension openclaw-node-vscode-0.2.0.vsix --force
+code --install-extension openclaw-node-vscode-<version>.vsix --force
+cursor --install-extension openclaw-node-vscode-<version>.vsix --force
 ```
 
 ## Quick Start
@@ -134,6 +135,17 @@ Recommended behavior:
 - If the node shows `connected: true` and `paired: true` but `commands: []`, make sure `gateway.nodes.allowCommands` contains exact command names such as `vscode.workspace.info` and `vscode.file.read`.
 - Run `OpenClaw: Diagnose Connection` inside VS Code for guided local checks.
 
+### VS Code Entry Points
+
+Inside VS Code or Cursor, these are the main local entry points:
+- `OpenClaw: Setup Wizard` for first-run configuration and connect
+- `OpenClaw: Settings` for the full config panel, including terminal allowlist and agent defaults
+- `OpenClaw: Diagnose Connection` for token, host, and local config checks
+- `OpenClaw: Show Log` to open the extension output channel when connection or command handling fails
+- `OpenClaw: Agent Setup` to validate Cursor Agent CLI installation and auth
+- the `OpenClaw` status bar item to quickly connect or disconnect
+- the `OpenClaw` activity view in the bottom panel to inspect recent operations, parameters, results, and waiting task decisions
+
 ## Command Families
 
 Use full command names when invoking through OpenClaw.
@@ -144,8 +156,8 @@ Use full command names when invoking through OpenClaw.
 |---------|------------|-------------|
 | `vscode.file.read` | `path`, `offset?`, `limit?` | Read file text by line range |
 | `vscode.file.write` | `path`, `content` | Write or create a file |
-| `vscode.file.edit` | `path`, `edits[]` | Apply targeted text edits |
-| `vscode.file.delete` | `path` | Delete a file |
+| `vscode.file.edit` | `path`, `oldText`, `newText` | Replace all matches of `oldText` with `newText` |
+| `vscode.file.delete` | `path`, `useTrash?` | Delete a file; uses trash by default |
 | `vscode.dir.list` | `path?`, `recursive?`, `pattern?` | List files or folders |
 | `vscode.workspace.info` | none | Return workspace name and folders |
 
@@ -171,16 +183,16 @@ Use full command names when invoking through OpenClaw.
 | Command | Parameters | Description |
 |---------|------------|-------------|
 | `vscode.git.status` | none | Working tree status |
-| `vscode.git.diff` | `path?`, `staged?` | Git diff |
-| `vscode.git.log` | `count?`, `path?` | Commit log |
-| `vscode.git.blame` | `path` | Git blame |
+| `vscode.git.diff` | `path?`, `staged?`, `ref?` | Git diff |
+| `vscode.git.log` | `limit?`, `path?`, `oneline?` | Commit log |
+| `vscode.git.blame` | `path`, `startLine?`, `endLine?` | Git blame |
 | `vscode.git.stage` | `paths[]` | Stage files |
 | `vscode.git.unstage` | `paths[]` | Unstage files |
-| `vscode.git.commit` | `message` | Commit staged changes |
+| `vscode.git.commit` | `message`, `amend?` | Commit staged changes |
 | `vscode.git.stash` | `action`, `message?` | Stash operations |
-| `vscode.test.list` | none | Discover tests |
-| `vscode.test.run` | `testIds?`, `grep?` | Run tests |
-| `vscode.test.results` | none | Latest test results |
+| `vscode.test.list` | `path?` | Report whether VS Code testing commands are available; does not enumerate concrete tests |
+| `vscode.test.run` | `path?`, `debug?` | Trigger run-all, run-current-file, or debug-current-file |
+| `vscode.test.results` | none | Diagnostics-based summary for test-like files, not raw VS Code test results |
 | `vscode.debug.launch` | `config?` | Start debugging |
 | `vscode.debug.stop` | none | Stop debugging |
 | `vscode.debug.breakpoint` | `path`, `line`, `action?` | Toggle breakpoint |

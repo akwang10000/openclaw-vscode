@@ -214,6 +214,67 @@ test("cancelTask stops a running task and persists cancelled state", async () =>
   assert.ok(emitted.some((event) => event.type === "agent.task.cancelled"));
 });
 
+test("provider errors persist failed state instead of cancelled", async () => {
+  class ErrorProvider extends FakeProvider {
+    #createErrorHandle(input) {
+      input.onEvent({
+        type: "agent.task.started",
+        taskId: input.taskId,
+        provider: "codex",
+        status: "running",
+        ts: Date.now(),
+        turn: input.turn,
+        prompt: input.prompt,
+      });
+      return {
+        cancel: () => {},
+        done: Promise.resolve({
+          error: "Codex task timed out after 1000ms",
+          sessionId: `session-${input.taskId}`,
+        }),
+      };
+    }
+
+    startTask(input) {
+      this.started.push(input);
+      return this.#createErrorHandle(input);
+    }
+
+    resumeTask(input) {
+      this.resumed.push(input);
+      return this.#createErrorHandle(input);
+    }
+  }
+
+  const storagePath = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-agent-error-"));
+  const emitted = [];
+  const orchestrator = new AgentOrchestrator({
+    storagePath,
+    taskHistoryLimit: 20,
+    providers: { codex: new ErrorProvider() },
+    emitGatewayEvent: async (event) => {
+      emitted.push(event);
+    },
+  });
+  await orchestrator.initialize();
+
+  const started = await orchestrator.startTask({
+    provider: "codex",
+    prompt: "Do work",
+    mode: "agent",
+    cwd: ".",
+  });
+
+  const failed = await waitFor(async () => {
+    const snapshot = await orchestrator.getTaskStatus(started.taskId);
+    return snapshot.status === "failed" ? snapshot : null;
+  });
+
+  assert.equal(failed.status, "failed");
+  assert.match(failed.lastError, /timed out/i);
+  assert.ok(emitted.some((event) => event.type === "agent.task.failed"));
+});
+
 test("initialize converts persisted running tasks into interrupted tasks", async () => {
   const storagePath = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-agent-restore-"));
   const tasksPath = path.join(storagePath, "tasks");
@@ -245,4 +306,3 @@ test("initialize converts persisted running tasks into interrupted tasks", async
   assert.equal(restored.status, "interrupted");
   assert.match(restored.lastError, /interrupted/i);
 });
-

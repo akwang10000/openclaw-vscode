@@ -1,7 +1,7 @@
 {
   "name": "openclaw-node-vscode",
   "displayName": "OpenClaw Node for VS Code",
-  "description": "Secure workspace bridge between OpenClaw Gateway and VS Code for file operations, search, and diagnostics via the VS Code API sandbox.",
+  "description": "Secure workspace bridge between OpenClaw Gateway and VS Code for file operations, language intelligence, and diagnostics via the VS Code API sandbox.",
   "version": "0.2.0",
   "publisher": "xiaoyaner-home",
   "repository": {

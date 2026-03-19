@@ -14,6 +14,20 @@ export interface Activity {
   error?: string;
 }
 
+interface AgentTaskActivityDetails {
+  provider: string;
+  status: "queued" | "running" | "waiting_decision" | "completed" | "failed" | "cancelled" | "interrupted";
+  prompt: string;
+  turn: number;
+  latestOutput?: string;
+  latestProgress?: string;
+  decisionRequest?: unknown;
+  resultText?: string;
+  error?: string;
+  updatedAt: number;
+  createdAt: number;
+}
+
 const CATEGORY_MAP: Record<string, string> = {
   "vscode.file": "File",
   "vscode.dir": "File",
@@ -124,6 +138,93 @@ function truncStr(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) + "..." : s;
 }
 
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function summarizePrompt(prompt: string, provider: string): string {
+  const lines = prompt
+    .split(/\r?\n/)
+    .map((line) => normalizeWhitespace(line))
+    .filter(Boolean)
+    .filter((line) => {
+      const lower = line.toLowerCase();
+      return !(
+        lower.startsWith("do not modify files") ||
+        lower.startsWith("return only ") ||
+        lower.startsWith("important constraint") ||
+        lower.startsWith("the user selected option") ||
+        lower.startsWith("user notes:") ||
+        lower.startsWith("if the task was originally")
+      );
+    });
+  const firstLine = lines[0] ?? "";
+  const firstSentence = firstLine.split(/(?<=[.!?])\s+/)[0] ?? "";
+  const summary = normalizeWhitespace(firstSentence || firstLine);
+  return summary ? truncStr(summary.replace(/[.]+$/, ""), 80) : `${provider} task`;
+}
+
+function summarizeStatusText(value: string): string {
+  const summary = normalizeWhitespace(value);
+  return truncStr(summary.replace(/[.]+$/, ""), 72);
+}
+
+function isUsefulProgressText(value: string): boolean {
+  const trimmed = normalizeWhitespace(value);
+  if (!trimmed) {
+    return false;
+  }
+  if (
+    trimmed === "codex.event" ||
+    trimmed === "item.completed" ||
+    /^Started turn \d+$/i.test(trimmed) ||
+    /^Resumed turn \d+$/i.test(trimmed) ||
+    /^\d{4}-\d{2}-\d{2}[ T]/.test(trimmed)
+  ) {
+    return false;
+  }
+  const noisyFragments = [
+    "thread-stream-state-changed",
+    "codex_core::features",
+    "rmcp::transport::worker",
+    "missing-content-type",
+    "local-environments is not supported",
+  ];
+  return !noisyFragments.some((fragment) => trimmed.includes(fragment));
+}
+
+export function describeAgentTaskIntent(taskId: string, details: AgentTaskActivityDetails): string {
+  const summary = summarizePrompt(details.prompt, details.provider);
+  const decisionRequest = details.decisionRequest as { question?: unknown } | undefined;
+  const usefulProgress = details.latestProgress && isUsefulProgressText(details.latestProgress)
+    ? summarizeStatusText(details.latestProgress)
+    : "";
+  const usefulError = details.error ? summarizeStatusText(details.error) : "";
+  const waitingLabel =
+    decisionRequest && typeof decisionRequest.question === "string" && decisionRequest.question.trim()
+      ? summarizeStatusText(decisionRequest.question)
+      : summary;
+
+  switch (details.status) {
+    case "queued":
+      return `Preparing task: ${summary}`;
+    case "running":
+      return usefulProgress ? `Working on: ${summary} | ${usefulProgress}` : `Working on: ${summary}`;
+    case "waiting_decision":
+      return `Waiting for decision: ${waitingLabel}`;
+    case "completed":
+      return `Completed: ${summary}`;
+    case "failed":
+      return usefulError ? `Failed: ${summary} | ${usefulError}` : `Failed: ${summary}`;
+    case "cancelled":
+      return `Cancelled: ${summary}`;
+    case "interrupted":
+      return `Interrupted: ${summary}`;
+    default:
+      return `${details.provider} task ${truncStr(taskId, 12)}`;
+  }
+}
+
 class ActivityStore extends EventEmitter {
   private activities: Activity[] = [];
   private nextId = 1;
@@ -162,19 +263,7 @@ class ActivityStore extends EventEmitter {
 
   upsertTask(
     taskId: string,
-    details: {
-      provider: string;
-      status: "queued" | "running" | "waiting_decision" | "completed" | "failed" | "cancelled" | "interrupted";
-      prompt: string;
-      turn: number;
-      latestOutput?: string;
-      latestProgress?: string;
-      decisionRequest?: unknown;
-      resultText?: string;
-      error?: string;
-      updatedAt: number;
-      createdAt: number;
-    }
+    details: AgentTaskActivityDetails
   ): void {
     const id = this.taskActivityIds.get(taskId) ?? `task:${taskId}`;
     this.taskActivityIds.set(taskId, id);
@@ -208,14 +297,14 @@ class ActivityStore extends EventEmitter {
       existing.durationMs = existing.finishedAt ? existing.finishedAt - existing.startedAt : undefined;
       existing.payload = payload;
       existing.error = details.error;
-      existing.intent = `${details.provider} task ${truncStr(taskId, 12)}`;
+      existing.intent = describeAgentTaskIntent(taskId, details);
       existing.params = { prompt: details.prompt, provider: details.provider };
     } else {
       this.activities.unshift({
         id,
         command: "vscode.agent.task",
         category: "Agent Task",
-        intent: `${details.provider} task ${truncStr(taskId, 12)}`,
+        intent: describeAgentTaskIntent(taskId, details),
         params: { prompt: details.prompt, provider: details.provider },
         status: mappedStatus,
         startedAt: details.createdAt,
